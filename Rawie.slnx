@@ -1,5 +1,9 @@
 <Solution>
   <Folder Name="/spikes/">
     <Project Path="spikes/S0.Hello/S0.Hello.csproj" />
+    <Project Path="spikes/SA.Thumbs/SA.Thumbs.csproj" />
+    <Project Path="spikes/SB.ShellMenu/SB.ShellMenu.csproj" />
+    <Project Path="spikes/SC.Import/SC.Import.csproj" />
+    <Project Path="spikes/SD.Video/SD.Video.csproj" />
   </Folder>
 </Solution>

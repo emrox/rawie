@@ -5,3 +5,6 @@ obj/
 # Test images are large + not ours to redistribute — keep only the README.
 testdata/*
 !testdata/README.md
+
+# Spike scratch output (posters, benchmark CSVs, import runs)
+out_spike*/
