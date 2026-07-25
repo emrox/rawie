@@ -12,7 +12,10 @@ using Windows.Storage.FileProperties;
 using Windows.Storage.Pickers;
 using Windows.System;
 using WinRT.Interop;
+using Vanara.PInvoke;
+using Vanara.Windows.Shell;
 using Directory = System.IO.Directory;
+using Visibility = Microsoft.UI.Xaml.Visibility;
 
 namespace Rawie.App;
 
@@ -57,8 +60,27 @@ public sealed partial class MainWindow : Window
             if (Directory.Exists(pics)) Roots.Add(NewFolder(pics, "Pictures"));
             foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
                 Roots.Add(NewFolder(drive.RootDirectory.FullName, drive.Name));
+            AddPortableDevices();
         }
         catch (Exception e) { Diag.Log("tree roots fail: " + e.Message); }
+    }
+
+    // Cameras/phones in MTP mode: no drive letter, they live under "This PC" as shell items.
+    private void AddPortableDevices()
+    {
+        try
+        {
+            var pc = new ShellFolder(Shell32.KNOWNFOLDERID.FOLDERID_ComputerFolder);
+            foreach (var child in pc.EnumerateChildren(FolderItemFilter.Folders | FolderItemFilter.Storage, HWND.NULL))
+            {
+                bool isDrive;
+                try { isDrive = !string.IsNullOrEmpty(child.FileSystemPath); } catch { isDrive = false; }
+                if (isDrive) { child.Dispose(); continue; }   // drives already added via DriveInfo
+                Roots.Add(ShellFolderNode(child));            // keep the ShellItem alive in the node
+                Diag.Log($"tree: portable device '{child.Name}'");
+            }
+        }
+        catch (Exception e) { Diag.Log("portable devices fail: " + e.Message); }
     }
 
     private static FolderNode NewFolder(string path, string? name = null)
@@ -66,6 +88,24 @@ public sealed partial class MainWindow : Window
         var fn = new FolderNode(path, name);
         if (HasSubdirs(path)) fn.Children.Add(new FolderNode(path, "…"));   // placeholder -> shows expander
         return fn;
+    }
+
+    private static FolderNode ShellFolderNode(ShellItem item)
+    {
+        var fn = new FolderNode(item.ParsingName ?? item.Name, item.Name) { Item = item };
+        if (ShellHasSubfolders(item)) fn.Children.Add(new FolderNode(fn.Path, "…"));
+        return fn;
+    }
+
+    private static bool ShellHasSubfolders(ShellItem item)
+    {
+        try
+        {
+            var sf = new ShellFolder(item);   // no using: don't dispose the item we keep in the tree
+            foreach (var c in sf.EnumerateChildren(FolderItemFilter.Folders, HWND.NULL)) { c.Dispose(); return true; }
+            return false;
+        }
+        catch { return false; }
     }
 
     private static bool HasSubdirs(string path)
@@ -87,18 +127,54 @@ public sealed partial class MainWindow : Window
         fn.Children.Clear();   // drop the placeholder
         try
         {
-            foreach (var dir in Directory.EnumerateDirectories(fn.Path)
-                         .Where(d => !IsHiddenDir(d))
-                         .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
-                fn.Children.Add(NewFolder(dir));
+            if (fn.Item is not null)   // shell (camera) folder
+            {
+                var sf = new ShellFolder(fn.Item);
+                foreach (var child in sf.EnumerateChildren(FolderItemFilter.Folders, HWND.NULL)
+                             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+                    fn.Children.Add(ShellFolderNode(child));
+            }
+            else                       // filesystem folder
+            {
+                foreach (var dir in Directory.EnumerateDirectories(fn.Path)
+                             .Where(d => !IsHiddenDir(d))
+                             .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+                    fn.Children.Add(NewFolder(dir));
+            }
         }
         catch (Exception e) { Diag.Log("expand fail: " + e.Message); }
     }
 
     private void OnFolderInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {
-        if (args.InvokedItem is FolderNode fn) LoadFolder(fn.Path);
+        if (args.InvokedItem is not FolderNode fn) return;
+        if (fn.Item is not null) LoadShellFolder(fn.Item, fn.Name);
+        else LoadFolder(fn.Path);
     }
+
+    // Load a camera folder's media (shell items) into the grid.
+    private void LoadShellFolder(ShellItem folder, string displayName)
+    {
+        if (_preview) ExitPreview();
+        _items.Clear();
+        PathText.Text = displayName + "  (camera)";
+        try
+        {
+            var sf = new ShellFolder(folder);
+            foreach (var child in sf.EnumerateChildren(FolderItemFilter.NonFolders, HWND.NULL)
+                         .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (MediaExts.Contains(Path.GetExtension(child.Name))) _items.Add(new PhotoItem(child));
+                else child.Dispose();
+            }
+        }
+        catch (Exception e) { Diag.Log("load shell folder fail: " + e.Message); }
+
+        StatusText.Text = $"{_items.Count} items";
+        Diag.Log($"loaded {_items.Count} shell items from '{displayName}'");
+        if (_items.Count > 0) ThumbGrid.SelectedIndex = 0;
+    }
+
 
     private void LoadFolder(string path)
     {
@@ -132,11 +208,21 @@ public sealed partial class MainWindow : Window
         var token = ++_exifToken;
         StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_items.Count}   {p.Name}";
 
-        var rows = await Task.Run(() => ReadInfo(p.Path));
-        if (token != _exifToken) return;   // selection moved on; drop stale result
-        Exif.Clear();
-        foreach (var r in rows) Exif.Add(r);
-        Diag.Log($"info {p.Name}: {rows.Count} rows -> {string.Join(", ", rows.Take(4).Select(r => r.Label))}");
+        if (p.IsShell)
+        {
+            // camera items have no local file to read EXIF from — show basics until imported
+            Exif.Clear();
+            Exif.Add(new ExifRow("File", p.Name));
+            Exif.Add(new ExifRow("Location", "On camera"));
+            Exif.Add(new ExifRow("Note", "Import to disk for full EXIF"));
+        }
+        else
+        {
+            var rows = await Task.Run(() => ReadInfo(p.Path));
+            if (token != _exifToken) return;   // selection moved on; drop stale result
+            Exif.Clear();
+            foreach (var r in rows) Exif.Add(r);
+        }
 
         if (_preview) await ShowPreview(p, token);
     }
@@ -145,6 +231,13 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            if (p.IsShell)
+            {
+                var img = await p.LoadShellPreviewAsync(1600);
+                if (token != _exifToken) return;
+                PreviewImage.Source = img;
+                return;
+            }
             var file = await StorageFile.GetFileFromPathAsync(p.Path);
             using var t = await file.GetThumbnailAsync(ThumbnailMode.SingleItem, 1600, ThumbnailOptions.ResizeThumbnail);
             if (token != _exifToken) return;
@@ -209,6 +302,7 @@ public sealed partial class MainWindow : Window
 
     private static async Task OpenDefault(PhotoItem p)
     {
+        if (p.IsShell) { Diag.Log("open external: not supported for camera items (import first)"); return; }
         try
         {
             var file = await StorageFile.GetFileFromPathAsync(p.Path);
