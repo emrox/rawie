@@ -47,3 +47,12 @@ public sealed class PhotoItem : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Raise([CallerMemberName] string? n = null) => PropertyChanged?.Invoke(this, new(n));
 }
+
+// One row in the info/EXIF panel. Plain class with get-only props — x:Bind's type-info
+// generator rejects record init-setters.
+public sealed class ExifRow
+{
+    public string Label { get; }
+    public string Value { get; }
+    public ExifRow(string label, string value) { Label = label; Value = value; }
+}

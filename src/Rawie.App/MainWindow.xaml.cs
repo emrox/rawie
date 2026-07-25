@@ -1,12 +1,18 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using MetadataExtractor;
+using MetadataExtractor.Formats.Exif;
+using MetadataExtractor.Formats.GeoTiff;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage;
+using Windows.Storage.FileProperties;
 using Windows.Storage.Pickers;
 using Windows.System;
 using WinRT.Interop;
+using Directory = System.IO.Directory;
 
 namespace Rawie.App;
 
@@ -20,12 +26,19 @@ public sealed partial class MainWindow : Window
     };
 
     private readonly ObservableCollection<PhotoItem> _items = new();
+    public ObservableCollection<ExifRow> Exif { get; } = new();
+
+    private bool _preview;
+    private int _exifToken;   // guards against stale async EXIF/preview updates
 
     public MainWindow()
     {
         InitializeComponent();
         Title = "Rawie";
-        Grid.ItemsSource = _items;
+        ThumbGrid.ItemsSource = _items;
+
+        // handledEventsToo: the GridView swallows Enter in grid mode, so a normal KeyDown never sees it.
+        Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
 
         var start = FindTestData();
         if (start is not null) LoadFolder(start);
@@ -46,28 +59,95 @@ public sealed partial class MainWindow : Window
 
         StatusText.Text = $"{_items.Count} items";
         Diag.Log($"loaded {_items.Count} items from {path}");
+        if (_items.Count > 0) ThumbGrid.SelectedIndex = 0;
     }
 
-    // Virtualization: fires as cells scroll into view -> load only realized thumbnails.
+    // --- thumbnails: load only realized (visible) cells ---
     private void OnContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
-        if (!args.InRecycleQueue && args.Item is PhotoItem p)
-            _ = p.LoadThumbAsync();
+        if (!args.InRecycleQueue && args.Item is PhotoItem p) _ = p.LoadThumbAsync();
     }
 
-    private async void OnItemClick(object sender, ItemClickEventArgs e)
+    // --- selection drives the info panel + (in preview mode) the big image ---
+    private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (e.ClickedItem is PhotoItem p) await OpenDefault(p);
+        if (ThumbGrid.SelectedItem is not PhotoItem p) return;
+        var token = ++_exifToken;
+        StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_items.Count}   {p.Name}";
+
+        var rows = await Task.Run(() => ReadInfo(p.Path));
+        if (token != _exifToken) return;   // selection moved on; drop stale result
+        Exif.Clear();
+        foreach (var r in rows) Exif.Add(r);
+        Diag.Log($"info {p.Name}: {rows.Count} rows -> {string.Join(", ", rows.Take(4).Select(r => r.Label))}");
+
+        if (_preview) await ShowPreview(p, token);
     }
 
-    private async void OnGridKeyDown(object sender, KeyRoutedEventArgs e)
+    private async Task ShowPreview(PhotoItem p, int token)
     {
-        // GridView already handles arrow keys for selection; Enter opens with the OS default app.
-        if (e.Key == VirtualKey.Enter && Grid.SelectedItem is PhotoItem p)
+        try
         {
-            await OpenDefault(p);
-            e.Handled = true;
+            var file = await StorageFile.GetFileFromPathAsync(p.Path);
+            using var t = await file.GetThumbnailAsync(ThumbnailMode.SingleItem, 1600, ThumbnailOptions.ResizeThumbnail);
+            if (token != _exifToken) return;
+            var bmp = new BitmapImage();
+            await bmp.SetSourceAsync(t);
+            if (token != _exifToken) return;
+            PreviewImage.Source = bmp;
         }
+        catch (Exception e) { Diag.Log("preview fail: " + e.Message); }
+    }
+
+    // --- keys: Enter toggles preview, Esc exits, ← → navigate in preview mode ---
+    private void OnKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case VirtualKey.Enter when ThumbGrid.SelectedItem is not null:
+                if (_preview) ExitPreview(); else EnterPreview();
+                e.Handled = true;
+                break;
+            case VirtualKey.Escape when _preview:
+                ExitPreview(); e.Handled = true; break;
+            case VirtualKey.Left when _preview:
+                Move(-1); e.Handled = true; break;
+            case VirtualKey.Right when _preview:
+                Move(1); e.Handled = true; break;
+        }
+    }
+
+    private void Move(int delta)
+    {
+        var i = ThumbGrid.SelectedIndex + delta;
+        if (i >= 0 && i < _items.Count) ThumbGrid.SelectedIndex = i;
+    }
+
+    private void OnItemDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (ThumbGrid.SelectedItem is not null) EnterPreview();
+    }
+
+    private void EnterPreview()
+    {
+        _preview = true;
+        ThumbGrid.Visibility = Visibility.Collapsed;
+        PreviewPanel.Visibility = Visibility.Visible;
+        PreviewPanel.Focus(FocusState.Programmatic);
+        if (ThumbGrid.SelectedItem is PhotoItem p) _ = ShowPreview(p, _exifToken);
+    }
+
+    private void ExitPreview()
+    {
+        _preview = false;
+        PreviewPanel.Visibility = Visibility.Collapsed;
+        ThumbGrid.Visibility = Visibility.Visible;
+        ThumbGrid.Focus(FocusState.Programmatic);
+    }
+
+    private void OnOpenExternalAccel(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (ThumbGrid.SelectedItem is PhotoItem p) { _ = OpenDefault(p); args.Handled = true; }
     }
 
     private static async Task OpenDefault(PhotoItem p)
@@ -75,7 +155,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var file = await StorageFile.GetFileFromPathAsync(p.Path);
-            await Launcher.LaunchFileAsync(file);   // OS default program
+            await Launcher.LaunchFileAsync(file);
         }
         catch (Exception e) { Diag.Log("open failed: " + e.Message); }
     }
@@ -87,6 +167,48 @@ public sealed partial class MainWindow : Window
         InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
         var folder = await picker.PickSingleFolderAsync();
         if (folder is not null) LoadFolder(folder.Path);
+    }
+
+    // --- info/EXIF (MetadataExtractor, off the UI thread) ---
+    private static List<ExifRow> ReadInfo(string path)
+    {
+        var rows = new List<ExifRow>();
+        try { rows.Add(new ExifRow("File", Path.GetFileName(path))); } catch { }
+
+        try
+        {
+            var dirs = ImageMetadataReader.ReadMetadata(path);
+            var exif = dirs.OfType<ExifDirectoryBase>().ToList();
+            var gps = dirs.OfType<GpsDirectory>().FirstOrDefault();
+
+            // Search across every EXIF IFD (IFD0, the real Exif SubIFD, preview SubIFDs, …).
+            // Different RAW makers scatter the same tags into different sub-IFDs, so picking one
+            // directory misses fields (NEF/DNG put exposure/ISO in a SubIFD that isn't the first).
+            string? Val(int tag) => exif.Select(d => d.GetDescription(tag))
+                                        .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+            void Add(string label, string? val) { if (!string.IsNullOrWhiteSpace(val)) rows.Add(new ExifRow(label, val!)); }
+
+            var cam = string.Join(" ", new[] { Val(ExifDirectoryBase.TagMake), Val(ExifDirectoryBase.TagModel) }
+                .Where(x => !string.IsNullOrWhiteSpace(x)));
+            Add("Camera", cam);
+            Add("Lens", Val(ExifDirectoryBase.TagLensModel));
+            Add("Date taken", Val(ExifDirectoryBase.TagDateTimeOriginal) ?? Val(ExifDirectoryBase.TagDateTime));
+            Add("Exposure", Val(ExifDirectoryBase.TagExposureTime));
+            Add("Aperture", Val(ExifDirectoryBase.TagFNumber));
+            Add("ISO", Val(ExifDirectoryBase.TagIsoEquivalent));
+            Add("Focal length", Val(ExifDirectoryBase.TagFocalLength));
+            Add("Exposure bias", Val(ExifDirectoryBase.TagExposureBias));
+            Add("Flash", Val(ExifDirectoryBase.TagFlash));
+
+            var w = Val(ExifDirectoryBase.TagExifImageWidth);
+            var h = Val(ExifDirectoryBase.TagExifImageHeight);
+            if (w is not null && h is not null) Add("Dimensions", $"{w} × {h}");
+            if (gps?.GetGeoLocation() is { } loc) Add("GPS", $"{loc.Latitude:F5}, {loc.Longitude:F5}");
+        }
+        catch (Exception e) { Diag.Log("exif fail: " + e.Message); }
+
+        try { rows.Add(new ExifRow("Size", $"{new FileInfo(path).Length / 1048576.0:F1} MB")); } catch { }
+        return rows;
     }
 
     private static string? FindTestData()

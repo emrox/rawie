@@ -2,38 +2,73 @@
     x:Class="Rawie.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Rawie.App"
-    xmlns:controls="using:Microsoft.UI.Xaml.Controls">
+    xmlns:local="using:Rawie.App">
 
-    <Grid RowDefinitions="Auto,*,Auto" Padding="0">
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Padding="12">
-            <Button Content="Open folder…" Click="OnPickFolder" />
-            <TextBlock x:Name="PathText" Text="(no folder)" VerticalAlignment="Center"
-                       TextTrimming="CharacterEllipsis" />
-        </StackPanel>
+    <Grid x:Name="Root" ColumnDefinitions="*,Auto">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnOpenExternalAccel" />
+        </Grid.KeyboardAccelerators>
 
-        <GridView x:Name="Grid" Grid.Row="1"
-                  Padding="8"
-                  SelectionMode="Single"
-                  IsItemClickEnabled="True"
-                  ItemClick="OnItemClick"
-                  ContainerContentChanging="OnContainerContentChanging"
-                  KeyDown="OnGridKeyDown">
-            <GridView.ItemTemplate>
-                <DataTemplate x:DataType="local:PhotoItem">
-                    <Grid Width="184" Height="184" Margin="4" RowDefinitions="*,Auto"
-                          Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                          CornerRadius="4">
-                        <Image Grid.Row="0" Source="{x:Bind Thumb, Mode=OneWay}" Stretch="Uniform" Margin="4" />
-                        <TextBlock Grid.Row="1" Text="{x:Bind Name}" FontSize="11"
-                                   TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"
-                                   Padding="4,2" />
-                    </Grid>
-                </DataTemplate>
-            </GridView.ItemTemplate>
-        </GridView>
+        <!-- content: toolbar + (grid | preview) + status -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto">
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Padding="12">
+                <Button Content="Open folder…" Click="OnPickFolder" />
+                <TextBlock x:Name="PathText" Text="(no folder)" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
 
-        <TextBlock x:Name="StatusText" Grid.Row="2" Padding="12,6" FontSize="12"
-                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Grid Grid.Row="1">
+                <GridView x:Name="ThumbGrid" Padding="8"
+                          SelectionMode="Single"
+                          SelectionChanged="OnSelectionChanged"
+                          DoubleTapped="OnItemDoubleTapped"
+                          ContainerContentChanging="OnContainerContentChanging">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="local:PhotoItem">
+                            <Grid Width="184" Height="184" Margin="4" RowDefinitions="*,Auto"
+                                  Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                  CornerRadius="4">
+                                <Image Grid.Row="0" Source="{x:Bind Thumb, Mode=OneWay}" Stretch="Uniform" Margin="4" />
+                                <TextBlock Grid.Row="1" Text="{x:Bind Name}" FontSize="11"
+                                           TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" Padding="4,2" />
+                            </Grid>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+
+                <!-- preview mode overlay (Enter / double-click); Esc or ← → to navigate -->
+                <Grid x:Name="PreviewPanel" Visibility="Collapsed" IsTabStop="True"
+                      Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+                    <Image x:Name="PreviewImage" Stretch="Uniform" Margin="8" />
+                    <TextBlock x:Name="PreviewHint" Text="Esc: back    ← →: navigate"
+                               VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16"
+                               Opacity="0.6" FontSize="12" />
+                </Grid>
+            </Grid>
+
+            <TextBlock x:Name="StatusText" Grid.Row="2" Padding="12,6" FontSize="12"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Grid>
+
+        <!-- info / EXIF panel -->
+        <Border Grid.Column="1" Width="300" BorderThickness="1,0,0,0"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+            <ScrollViewer>
+                <StackPanel Padding="14" Spacing="6">
+                    <TextBlock Text="Info" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <ItemsControl x:Name="ExifList" ItemsSource="{x:Bind Exif}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:ExifRow">
+                                <Grid ColumnDefinitions="104,*" Margin="0,3,0,3">
+                                    <TextBlock Grid.Column="0" Text="{x:Bind Label}" FontSize="12"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Value}" FontSize="12" TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
     </Grid>
 </Window>
