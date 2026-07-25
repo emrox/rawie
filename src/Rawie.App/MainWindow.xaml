@@ -4,13 +4,27 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Rawie.App">
 
-    <Grid x:Name="Root" ColumnDefinitions="*,Auto">
+    <Grid x:Name="Root" ColumnDefinitions="260,*,Auto">
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnOpenExternalAccel" />
         </Grid.KeyboardAccelerators>
 
+        <!-- folder tree (lazy-loaded) -->
+        <Border Grid.Column="0" BorderThickness="0,0,1,0"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+            <TreeView x:Name="FolderTree" Padding="4" ItemsSource="{x:Bind Roots}"
+                      Expanding="OnFolderExpanding" ItemInvoked="OnFolderInvoked">
+                <TreeView.ItemTemplate>
+                    <DataTemplate x:DataType="local:FolderNode">
+                        <TreeViewItem ItemsSource="{x:Bind Children}" Content="{x:Bind Name}"
+                                      AutomationProperties.Name="{x:Bind Name}" />
+                    </DataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+        </Border>
+
         <!-- content: toolbar + (grid | preview) + status -->
-        <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto">
+        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Padding="12">
                 <Button Content="Open folder…" Click="OnPickFolder" />
                 <TextBlock x:Name="PathText" Text="(no folder)" VerticalAlignment="Center"
@@ -51,7 +65,7 @@
         </Grid>
 
         <!-- info / EXIF panel -->
-        <Border Grid.Column="1" Width="300" BorderThickness="1,0,0,0"
+        <Border Grid.Column="2" Width="300" BorderThickness="1,0,0,0"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
             <ScrollViewer>
                 <StackPanel Padding="14" Spacing="6">

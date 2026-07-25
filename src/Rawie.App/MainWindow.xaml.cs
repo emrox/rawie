@@ -40,12 +40,69 @@ public sealed partial class MainWindow : Window
         // handledEventsToo: the GridView swallows Enter in grid mode, so a normal KeyDown never sees it.
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
 
+        PopulateTreeRoots();
+
         var start = FindTestData();
         if (start is not null) LoadFolder(start);
     }
 
+    // --- left folder tree (bound mode; children fill lazily on expand) ---
+    public ObservableCollection<FolderNode> Roots { get; } = new();
+
+    private void PopulateTreeRoots()
+    {
+        try
+        {
+            var pics = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            if (Directory.Exists(pics)) Roots.Add(NewFolder(pics, "Pictures"));
+            foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
+                Roots.Add(NewFolder(drive.RootDirectory.FullName, drive.Name));
+        }
+        catch (Exception e) { Diag.Log("tree roots fail: " + e.Message); }
+    }
+
+    private static FolderNode NewFolder(string path, string? name = null)
+    {
+        var fn = new FolderNode(path, name);
+        if (HasSubdirs(path)) fn.Children.Add(new FolderNode(path, "…"));   // placeholder -> shows expander
+        return fn;
+    }
+
+    private static bool HasSubdirs(string path)
+    {
+        try { return Directory.EnumerateDirectories(path).Any(d => !IsHiddenDir(d)); }
+        catch { return false; }   // access-denied / not-ready volumes just show no expander
+    }
+
+    private static bool IsHiddenDir(string dir)
+    {
+        try { var a = File.GetAttributes(dir); return a.HasFlag(System.IO.FileAttributes.Hidden) || a.HasFlag(System.IO.FileAttributes.System); }
+        catch { return true; }
+    }
+
+    private void OnFolderExpanding(TreeView sender, TreeViewExpandingEventArgs args)
+    {
+        if (args.Item is not FolderNode fn || fn.Loaded) return;
+        fn.Loaded = true;
+        fn.Children.Clear();   // drop the placeholder
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(fn.Path)
+                         .Where(d => !IsHiddenDir(d))
+                         .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+                fn.Children.Add(NewFolder(dir));
+        }
+        catch (Exception e) { Diag.Log("expand fail: " + e.Message); }
+    }
+
+    private void OnFolderInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItem is FolderNode fn) LoadFolder(fn.Path);
+    }
+
     private void LoadFolder(string path)
     {
+        if (_preview) ExitPreview();   // a new folder always lands in the grid
         _items.Clear();
         PathText.Text = path;
         try

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml.Media;
@@ -55,4 +56,21 @@ public sealed class ExifRow
     public string Label { get; }
     public string Value { get; }
     public ExifRow(string label, string value) { Label = label; Value = value; }
+}
+
+// A folder node in the left tree (bound-mode TreeView item). Children fill lazily on expand;
+// a single placeholder child makes the expander chevron appear before real children load.
+public sealed class FolderNode
+{
+    public string Path { get; }
+    public string Name { get; }
+    public ObservableCollection<FolderNode> Children { get; } = new();
+    public bool Loaded { get; set; }
+
+    public FolderNode(string path, string? name = null)
+    {
+        Path = path;
+        Name = name ?? System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
+        if (string.IsNullOrEmpty(Name)) Name = path;   // drive roots ("C:\") have no file name
+    }
 }
