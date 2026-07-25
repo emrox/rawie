@@ -6,4 +6,9 @@
     <Project Path="spikes/SC.Import/SC.Import.csproj" />
     <Project Path="spikes/SD.Video/SD.Video.csproj" />
   </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Rawie.App/Rawie.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
 </Solution>
