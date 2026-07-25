@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+
+# Test images are large + not ours to redistribute — keep only the README.
+testdata/*
+!testdata/README.md

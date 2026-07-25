@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/spikes/">
+    <Project Path="spikes/S0.Hello/S0.Hello.csproj" />
+  </Folder>
+</Solution>

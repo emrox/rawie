@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --version)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet nuget *)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet run *)",
+      "Bash(xargs -n1 basename)"
+    ]
+  }
+}
