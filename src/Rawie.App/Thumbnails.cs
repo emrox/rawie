@@ -39,6 +39,24 @@ static class ThumbCache
         catch { return null; }
     }
 
+    /// Total bytes on disk (for the settings dialog). Cheap enough for a few thousand small files.
+    public static long SizeBytes()
+    {
+        try
+        {
+            return !Directory.Exists(Dir) ? 0
+                : new DirectoryInfo(Dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+        }
+        catch { return 0; }
+    }
+
+    /// Delete every cached thumbnail. Safe: the cache is disposable and rebuilds on demand.
+    public static void Clear()
+    {
+        try { if (Directory.Exists(Dir)) Directory.Delete(Dir, recursive: true); }
+        catch (Exception e) { Diag.Log("thumb cache clear: " + e.Message); }
+    }
+
     public static async Task WriteAsync(string key, byte[] bytes)
     {
         try

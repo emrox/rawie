@@ -52,7 +52,9 @@ public sealed partial class MainWindow : Window
 
         var args = Environment.GetCommandLineArgs();
         var idx = Array.IndexOf(args, "--folder");
-        var start = idx >= 0 && idx + 1 < args.Length ? args[idx + 1] : FindTestData();
+        var start = idx >= 0 && idx + 1 < args.Length
+            ? args[idx + 1]                              // explicit override wins
+            : _settings.ResolveStartFolder() ?? FindTestData();
         if (start is not null && Directory.Exists(start))
         {
             LoadFolder(start);
@@ -130,6 +132,7 @@ public sealed partial class MainWindow : Window
     // --- left folder tree (bound mode; children fill lazily on expand) ---
     public ObservableCollection<FolderNode> Roots { get; } = new();
     private FolderNode? _selectedNode;   // so a programmatic reveal can clear the previous highlight
+    private readonly Settings _settings = Settings.Load();
 
     private void PopulateTreeRoots()
     {
@@ -341,6 +344,13 @@ public sealed partial class MainWindow : Window
 
         SetItems(list);
         Diag.Log($"loaded {list.Count} items from {path}");
+
+        // Remember where we were, so a blank "start folder" setting reopens here next time.
+        if (!string.Equals(_settings.LastFolder, path, StringComparison.OrdinalIgnoreCase))
+        {
+            _settings.LastFolder = path;
+            _settings.Save();
+        }
     }
 
     private void SetItems(List<PhotoItem> list)
@@ -637,6 +647,83 @@ public sealed partial class MainWindow : Window
             await Launcher.LaunchFileAsync(file);
         }
         catch (Exception e) { Diag.Log("open failed: " + e.Message); }
+    }
+
+    // --- settings ---
+    private async void OnOpenSettings(object sender, RoutedEventArgs e)
+    {
+        var startBox = new TextBox
+        {
+            Text = _settings.StartFolder ?? "",
+            PlaceholderText = "(blank — reopen the last folder)",
+            Width = 320,
+        };
+        var browse = new Button { Content = "Browse…" };
+        var clearStart = new Button { Content = "Use last folder" };
+        browse.Click += async (_, _) =>
+        {
+            var picked = await PickFolderAsync();
+            if (picked is not null) startBox.Text = picked;
+        };
+        clearStart.Click += (_, _) => startBox.Text = "";
+
+        var cacheText = new TextBlock { Text = CacheSizeText(), Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] };
+        var clearCache = new Button { Content = "Clear thumbnail cache" };
+        clearCache.Click += (_, _) =>
+        {
+            ThumbCache.Clear();
+            cacheText.Text = CacheSizeText() + "  — cleared";
+        };
+
+        var panel = new StackPanel { Spacing = 8, MinWidth = 420 };
+        panel.Children.Add(new TextBlock { Text = "Folder to open at startup", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        row.Children.Add(startBox);
+        row.Children.Add(browse);
+        panel.Children.Add(row);
+        panel.Children.Add(clearStart);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Leave blank to reopen the folder you had open last time.",
+            FontSize = 12,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        panel.Children.Add(new TextBlock { Text = "Thumbnail cache", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        panel.Children.Add(cacheText);
+        panel.Children.Add(clearCache);
+
+        var dlg = new ContentDialog
+        {
+            Title = "Settings",
+            Content = panel,
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+
+        if (await dlg.ShowAsync() == ContentDialogResult.Primary)
+        {
+            var v = startBox.Text.Trim();
+            _settings.StartFolder = string.IsNullOrWhiteSpace(v) ? null : v;
+            _settings.Save();
+        }
+    }
+
+    private static string CacheSizeText()
+    {
+        var mb = ThumbCache.SizeBytes() / 1048576.0;
+        return mb < 0.1 ? "Cache is empty" : $"Currently using {mb:F1} MB";
+    }
+
+    private async Task<string?> PickFolderAsync()
+    {
+        var picker = new FolderPicker();
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        return (await picker.PickSingleFolderAsync())?.Path;
     }
 
     private async void OnPickFolder(object sender, RoutedEventArgs e)
