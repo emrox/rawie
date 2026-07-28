@@ -416,6 +416,10 @@ public sealed partial class MainWindow : Window
     // --- keys: Enter toggles preview, Esc exits, ← → navigate in preview mode ---
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // The global handler is registered with handledEventsToo, so it also sees keys a dialog's
+        // TextBox already consumed — typing "x" would reject the photo, Enter would open preview.
+        if (_modalDepth > 0) return;
+
         switch (e.Key)
         {
             case VirtualKey.Enter when ThumbGrid.SelectedItem is PhotoItem sel:
@@ -434,6 +438,14 @@ public sealed partial class MainWindow : Window
                 SetRating(e.Key - VirtualKey.NumberPad0); e.Handled = true; break;
             case VirtualKey.X when ThumbGrid.SelectedItem is PhotoItem rej:
                 SetRating(rej.Rating == Xmp.Rejected ? 0 : Xmp.Rejected); e.Handled = true; break;
+
+            // file operations (Recycle Bin / rename / move) — all undoable via Explorer
+            case VirtualKey.Delete:
+                DeleteSelected(); e.Handled = true; break;
+            case VirtualKey.F2:
+                RenameSelected(); e.Handled = true; break;
+            case VirtualKey.M when IsCtrlDown():
+                MoveSelected(); e.Handled = true; break;
             case VirtualKey.Escape when _preview:
                 ExitPreview(); e.Handled = true; break;
             case VirtualKey.Left when _preview:
@@ -490,6 +502,129 @@ public sealed partial class MainWindow : Window
         PreviewRatingBox.Visibility = p.RatingVisibility;
     }
 
+    // --- delete / rename / move (IFileOperation) ---
+
+    private static List<string> WithCompanions(string photoPath) =>
+        Xmp.FilesToMoveWith(photoPath, f => MediaExts.Contains(Path.GetExtension(f)));
+
+    private HWND Hwnd => WindowNative.GetWindowHandle(this);
+
+    private int _modalDepth;
+
+    /// Show a dialog with app hotkeys suppressed for its lifetime, then hand focus back to the
+    /// photos — otherwise focus lands in the folder tree and the arrow keys stop navigating images.
+    private async Task<ContentDialogResult> ShowModalAsync(ContentDialog dlg)
+    {
+        _modalDepth++;
+        try { return await dlg.ShowAsync(); }
+        finally { _modalDepth--; RestoreListFocus(); }
+    }
+
+    private void RestoreListFocus()
+    {
+        void Apply()
+        {
+            if (_preview) { PreviewPanel.Focus(FocusState.Programmatic); return; }
+
+            // Focus the selected item's container, not just the GridView: arrow keys only move the
+            // selection when the item itself holds focus.
+            if (ThumbGrid.SelectedIndex >= 0 &&
+                ThumbGrid.ContainerFromIndex(ThumbGrid.SelectedIndex) is Control item)
+                item.Focus(FocusState.Programmatic);
+            else
+                ThumbGrid.Focus(FocusState.Programmatic);
+        }
+
+        Apply();
+        // A ContentDialog restores focus to whatever it stole it from *after* it closes, which would
+        // undo the line above — so apply again once that has happened.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            Apply();
+            Diag.Log($"FOCUSCHECK -> {Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Content.XamlRoot)?.GetType().Name ?? "null"}");
+        });
+    }
+
+    private void DeleteSelected()
+    {
+        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "deleted")) return;
+        var index = ThumbGrid.SelectedIndex;
+        if (FileOps.Recycle(WithCompanions(p.Path), Hwnd))
+        {
+            StatusText.Text = $"{p.Name} — moved to Recycle Bin";
+            ReloadKeepingPosition(index);
+        }
+    }
+
+    private async void RenameSelected()
+    {
+        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "renamed")) return;
+        var index = ThumbGrid.SelectedIndex;
+
+        // Pre-select the name but not the extension, like Explorer's rename.
+        var box = new TextBox { Text = p.Name, SelectionStart = 0, SelectionLength = Path.GetFileNameWithoutExtension(p.Name).Length };
+        box.Loaded += (_, _) => box.Focus(FocusState.Programmatic);
+        var dlg = new ContentDialog
+        {
+            Title = "Rename",
+            Content = box,
+            PrimaryButtonText = "Rename",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        if (await ShowModalAsync(dlg) != ContentDialogResult.Primary) return;
+
+        var newName = box.Text.Trim();
+        if (newName.Length == 0 || newName == p.Name) return;
+
+        var ok = FileOps.Rename(p.Path, newName, Hwnd);
+        // Keep the sidecar matched to its photo (only when it isn't shared with a partner file).
+        var side = Xmp.SidecarFor(p.Path);
+        if (ok && WithCompanions(p.Path).Contains(side) && File.Exists(side))
+            FileOps.Rename(side, Path.GetFileNameWithoutExtension(newName) + ".xmp", Hwnd);
+
+        if (ok) { StatusText.Text = $"Renamed to {newName}"; ReloadKeepingPosition(index); }
+    }
+
+    private async void MoveSelected()
+    {
+        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "moved")) return;
+        var index = ThumbGrid.SelectedIndex;
+        var dest = await PickFolderAsync();
+        if (dest is null || string.Equals(dest, Path.GetDirectoryName(p.Path), StringComparison.OrdinalIgnoreCase)) return;
+
+        if (FileOps.Move(WithCompanions(p.Path), dest, Hwnd))
+        {
+            StatusText.Text = $"{p.Name} — moved to {dest}";
+            ReloadKeepingPosition(index);
+        }
+    }
+
+    /// Guard: folders and camera items aren't file-operable here.
+    private bool Rateable(PhotoItem p, string verb)
+    {
+        if (p.IsShell) { StatusText.Text = $"Camera items can't be {verb} — import first"; return false; }
+        if (p.IsFolder) { StatusText.Text = $"Folders can't be {verb} from here (use right-click)"; return false; }
+        return true;
+    }
+
+    /// Re-read the folder after a file operation, keeping the user where they were — the culling
+    /// flow depends on landing on the next photo rather than jumping back to the start.
+    private void ReloadKeepingPosition(int index)
+    {
+        var wasPreview = _preview;
+        var folder = PathText.Text;
+        if (!Directory.Exists(folder)) return;
+
+        LoadFolder(folder);
+        if (_current.Count == 0) return;
+
+        ThumbGrid.SelectedIndex = Math.Min(index, _current.Count - 1);
+        if (wasPreview) EnterPreview();
+        else RestoreListFocus();   // keep arrow-key navigation alive after a file operation
+    }
+
     /// Write a rating to the sidecar and reflect it in the UI.
     private void SetRating(int rating)
     {
@@ -516,6 +651,11 @@ public sealed partial class MainWindow : Window
             _ => $"{p.Name} — {rating} star{(rating == 1 ? "" : "s")}",
         };
     }
+
+    private static bool IsCtrlDown() =>
+        Microsoft.UI.Input.InputKeyboardSource
+            .GetKeyStateForCurrentThread(VirtualKey.Control)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
     private void Move(int delta)
     {
@@ -704,7 +844,7 @@ public sealed partial class MainWindow : Window
             XamlRoot = Content.XamlRoot,
         };
 
-        if (await dlg.ShowAsync() == ContentDialogResult.Primary)
+        if (await ShowModalAsync(dlg) == ContentDialogResult.Primary)
         {
             var v = startBox.Text.Trim();
             _settings.StartFolder = string.IsNullOrWhiteSpace(v) ? null : v;
