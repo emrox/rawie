@@ -50,6 +50,12 @@
                                   Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                   CornerRadius="4">
                                 <Image Grid.Row="0" Source="{x:Bind Thumb, Mode=OneWay}" Stretch="Uniform" Margin="4" />
+                                <Border Grid.Row="0" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                                        Visibility="{x:Bind RatingVisibility, Mode=OneWay}"
+                                        Background="#A0000000" CornerRadius="3" Padding="5,1" Margin="0,0,0,3">
+                                    <TextBlock Text="{x:Bind RatingText, Mode=OneWay}"
+                                               Foreground="{x:Bind RatingBrush, Mode=OneWay}" FontSize="12" />
+                                </Border>
                                 <TextBlock Grid.Row="1" Text="{x:Bind Name}" FontSize="11"
                                            TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" Padding="4,2" />
                             </Grid>
@@ -61,9 +67,13 @@
                 <Grid x:Name="PreviewPanel" Visibility="Collapsed" IsTabStop="True"
                       Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
                     <Image x:Name="PreviewImage" Stretch="Uniform" Margin="8" />
-                    <TextBlock x:Name="PreviewHint" Text="Esc: back    ← →: navigate"
+                    <TextBlock x:Name="PreviewHint" Text="Esc: back    ← →: navigate    1-5: rate    X: reject"
                                VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16"
                                Opacity="0.6" FontSize="12" />
+                    <Border x:Name="PreviewRatingBox" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                            Margin="0,0,0,18" Visibility="Collapsed"
+                            Background="#A0000000" CornerRadius="4" Padding="10,3">
+                        <TextBlock x:Name="PreviewRating" FontSize="18" /></Border>
                 </Grid>
             </Grid>
 
@@ -76,6 +86,17 @@
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
             <ScrollViewer>
                 <StackPanel Padding="14" Spacing="6">
+                    <TextBlock Text="Rating" FontWeight="SemiBold" />
+                    <StackPanel x:Name="RatingStars" Orientation="Horizontal" Spacing="2" Margin="0,0,0,10">
+                        <TextBlock Tag="1" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="1 star" />
+                        <TextBlock Tag="2" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="2 stars" />
+                        <TextBlock Tag="3" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="3 stars" />
+                        <TextBlock Tag="4" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="4 stars" />
+                        <TextBlock Tag="5" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="5 stars" />
+                        <TextBlock x:Name="RejectMark" Text="✕" FontSize="18" Margin="12,2,0,0"
+                                   Tapped="OnRejectTapped" ToolTipService.ToolTip="Reject (X)" />
+                    </StackPanel>
+
                     <TextBlock Text="Info" FontWeight="SemiBold" Margin="0,0,0,4" />
                     <ItemsControl x:Name="ExifList" ItemsSource="{x:Bind Exif}">
                         <ItemsControl.ItemTemplate>

@@ -24,12 +24,3 @@ public partial class App : Application
         Diag.Log("window Activated");
     }
 }
-
-static class Diag
-{
-    static readonly string Path = System.IO.Path.Combine(AppContext.BaseDirectory, "startup.log");
-    public static void Log(string m)
-    {
-        try { System.IO.File.AppendAllText(Path, $"{DateTime.Now:HH:mm:ss.fff} {m}\n"); } catch { }
-    }
-}

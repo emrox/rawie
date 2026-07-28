@@ -364,6 +364,8 @@ public sealed partial class MainWindow : Window
         if (ThumbGrid.SelectedItem is not PhotoItem p) return;
         var token = ++_exifToken;
         StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_current.Count}   {p.Name}";
+        ShowPreviewRating(p);
+        UpdateRatingStars(p);
 
         if (p.IsFolder)
         {
@@ -414,6 +416,14 @@ public sealed partial class MainWindow : Window
                 break;
             case VirtualKey.Application when ThumbGrid.SelectedItem is PhotoItem ctx:   // Menu key
                 ShowShellMenu(ctx); e.Handled = true; break;
+
+            // culling: 0 clears, 1-5 stars, X rejects (works in the grid and in preview)
+            case >= VirtualKey.Number0 and <= VirtualKey.Number5:
+                SetRating(e.Key - VirtualKey.Number0); e.Handled = true; break;
+            case >= VirtualKey.NumberPad0 and <= VirtualKey.NumberPad5:
+                SetRating(e.Key - VirtualKey.NumberPad0); e.Handled = true; break;
+            case VirtualKey.X when ThumbGrid.SelectedItem is PhotoItem rej:
+                SetRating(rej.Rating == Xmp.Rejected ? 0 : Xmp.Rejected); e.Handled = true; break;
             case VirtualKey.Escape when _preview:
                 ExitPreview(); e.Handled = true; break;
             case VirtualKey.Left when _preview:
@@ -421,6 +431,80 @@ public sealed partial class MainWindow : Window
             case VirtualKey.Right when _preview:
                 Move(1); e.Handled = true; break;
         }
+    }
+
+    // --- interactive 5-star control in the info pane ---
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush StarGold = new(Microsoft.UI.Colors.Gold);
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush StarDim = new(Microsoft.UI.Colors.Gray);
+    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush StarRed = new(Microsoft.UI.Colors.OrangeRed);
+
+    private void UpdateRatingStars(PhotoItem? p)
+    {
+        // Nothing rateable selected (folder / camera item) -> hide the control rather than lie.
+        var rateable = p is { IsFolder: false, IsShell: false };
+        RatingStars.Visibility = rateable ? Visibility.Visible : Visibility.Collapsed;
+        if (!rateable) return;
+
+        var rating = p!.Rating;
+        var n = 1;
+        foreach (var star in RatingStars.Children.OfType<TextBlock>())
+        {
+            if (ReferenceEquals(star, RejectMark)) continue;
+            var filled = rating >= n;
+            star.Text = filled ? "★" : "☆";
+            star.Foreground = filled ? StarGold : StarDim;
+            n++;
+        }
+        RejectMark.Foreground = rating == Xmp.Rejected ? StarRed : StarDim;
+    }
+
+    private void OnStarTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string tag } || !int.TryParse(tag, out var stars)) return;
+        var current = (ThumbGrid.SelectedItem as PhotoItem)?.Rating ?? 0;
+        SetRating(current == stars ? 0 : stars);   // clicking the current rating clears it
+        e.Handled = true;
+    }
+
+    private void OnRejectTapped(object sender, TappedRoutedEventArgs e)
+    {
+        var current = (ThumbGrid.SelectedItem as PhotoItem)?.Rating ?? 0;
+        SetRating(current == Xmp.Rejected ? 0 : Xmp.Rejected);
+        e.Handled = true;
+    }
+
+    private void ShowPreviewRating(PhotoItem p)
+    {
+        PreviewRating.Text = p.RatingText;
+        PreviewRating.Foreground = p.RatingBrush;
+        PreviewRatingBox.Visibility = p.RatingVisibility;
+    }
+
+    /// Write a rating to the sidecar and reflect it in the UI.
+    private void SetRating(int rating)
+    {
+        if (ThumbGrid.SelectedItem is not PhotoItem p) return;
+        if (p.IsFolder || p.IsShell)
+        {
+            StatusText.Text = p.IsShell ? "Rating needs the file on disk — import it first" : "Folders can't be rated";
+            return;
+        }
+        if (!Xmp.Write(p.Path, rating)) { StatusText.Text = "Couldn't write rating (file read-only?)"; return; }
+
+        // A RAW+JPEG pair shares one sidecar, so update every item pointing at it.
+        var side = Xmp.SidecarFor(p.Path);
+        foreach (var it in _current)
+            if (!it.IsFolder && !it.IsShell && string.Equals(Xmp.SidecarFor(it.Path), side, StringComparison.OrdinalIgnoreCase))
+                it.Rating = rating;
+
+        ShowPreviewRating(p);
+        UpdateRatingStars(p);
+        StatusText.Text = rating switch
+        {
+            Xmp.Rejected => $"{p.Name} — rejected",
+            0 => $"{p.Name} — rating cleared",
+            _ => $"{p.Name} — {rating} star{(rating == 1 ? "" : "s")}",
+        };
     }
 
     private void Move(int delta)

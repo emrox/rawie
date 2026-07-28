@@ -50,6 +50,41 @@ public sealed class PhotoItem : INotifyPropertyChanged
     private ImageSource? _thumb;
     public ImageSource? Thumb { get => _thumb; private set { _thumb = value; Raise(); } }
 
+    // --- culling: star rating / reject flag, persisted in an XMP sidecar ---
+    private static readonly SolidColorBrush Gold = new(Microsoft.UI.Colors.Gold);
+    private static readonly SolidColorBrush Red = new(Microsoft.UI.Colors.OrangeRed);
+
+    private int _rating;
+    public int Rating
+    {
+        get => _rating;
+        set
+        {
+            if (_rating == value) return;
+            _rating = value;
+            Raise(); Raise(nameof(RatingText)); Raise(nameof(RatingBrush)); Raise(nameof(RatingVisibility));
+        }
+    }
+
+    public string RatingText => Rating switch
+    {
+        Xmp.Rejected => "✕",
+        > 0 => new string('★', Rating),
+        _ => ""
+    };
+
+    public Brush RatingBrush => Rating == Xmp.Rejected ? Red : Gold;
+
+    // Hide the badge entirely when unrated — an empty box on every thumbnail is just noise.
+    public Microsoft.UI.Xaml.Visibility RatingVisibility =>
+        Rating == 0 ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+
+    /// Read the stored rating (cheap: usually just a File.Exists miss).
+    public void LoadRating()
+    {
+        if (!IsShell && !IsFolder) Rating = Xmp.Read(Path);
+    }
+
     // The loader generation this item belongs to. The pump drops items whose generation is stale,
     // so switching folders abandons queued work instead of draining it.
     public int Generation { get; } = ThumbLoader.Generation;
