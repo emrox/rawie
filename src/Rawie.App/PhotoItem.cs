@@ -27,15 +27,22 @@ public sealed class PhotoItem : INotifyPropertyChanged
     /// Filesystem items return null; callers create a short-lived ShellItem from Path instead.
     public ShellItem? ShellRef => _shell;
 
-    public PhotoItem(string path)
+    /// Folders appear in the grid too (Explorer-style); double-click opens them.
+    public bool IsFolder { get; }
+
+    public PhotoItem(string path, bool isFolder = false)
     {
         Path = path;
-        Name = System.IO.Path.GetFileName(path);
+        IsFolder = isFolder;
+        Name = isFolder
+            ? new DirectoryInfo(path).Name          // GetFileName is empty for "D:\" style paths
+            : System.IO.Path.GetFileName(path);
     }
 
-    public PhotoItem(ShellItem shell)
+    public PhotoItem(ShellItem shell, bool isFolder = false)
     {
         _shell = shell;
+        IsFolder = isFolder;
         Name = shell.Name ?? "?";
         Path = shell.ParsingName ?? Name;
     }
@@ -59,6 +66,18 @@ public sealed class PhotoItem : INotifyPropertyChanged
                 using var h = await Task.Run(() => ShellGetHBitmap(_shell, size, Generation));   // MTP off UI thread
                 if (h is null || Generation != ThumbLoader.Generation) return;
                 Thumb = await HBitmapToImage(h);
+                return;
+            }
+
+            if (IsFolder)   // folder icon/preview from the shell; not worth caching
+            {
+                var dir = await StorageFolder.GetFolderFromPathAsync(Path);
+                var ft = await dir.GetThumbnailAsync(ThumbnailMode.SingleItem, size, ThumbnailOptions.ResizeThumbnail);
+                if (ft is null || ft.Size == 0 || Generation != ThumbLoader.Generation) return;
+                var fbytes = new byte[ft.Size];
+                await ft.AsStreamForRead().ReadExactlyAsync(fbytes);
+                if (Generation != ThumbLoader.Generation) return;
+                Thumb = await BytesToBitmap(fbytes);
                 return;
             }
 

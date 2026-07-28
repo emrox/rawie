@@ -299,6 +299,10 @@ public sealed partial class MainWindow : Window
         try
         {
             var sf = new ShellFolder(folder);
+            foreach (var sub in sf.EnumerateChildren(FolderItemFilter.Folders, HWND.NULL)
+                         .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+                list.Add(new PhotoItem(sub, isFolder: true));
+
             foreach (var child in sf.EnumerateChildren(FolderItemFilter.NonFolders, HWND.NULL)
                          .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
@@ -322,6 +326,12 @@ public sealed partial class MainWindow : Window
         var list = new List<PhotoItem>();
         try
         {
+            // Subfolders first, like Explorer — double-click opens them.
+            foreach (var d in Directory.EnumerateDirectories(path)
+                         .Where(d => !IsHiddenDir(d))
+                         .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+                list.Add(new PhotoItem(d, isFolder: true));
+
             foreach (var f in Directory.EnumerateFiles(path)
                          .Where(f => MediaExts.Contains(Path.GetExtension(f)))
                          .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
@@ -337,7 +347,8 @@ public sealed partial class MainWindow : Window
     {
         _current = list;
         ThumbGrid.ItemsSource = list;             // single assignment — no per-item CollectionChanged churn
-        StatusText.Text = $"{list.Count} items";
+        var folders = list.Count(i => i.IsFolder);
+        StatusText.Text = folders > 0 ? $"{folders} folders, {list.Count - folders} files" : $"{list.Count} items";
         if (list.Count > 0) ThumbGrid.SelectedIndex = 0;
     }
 
@@ -354,7 +365,13 @@ public sealed partial class MainWindow : Window
         var token = ++_exifToken;
         StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_current.Count}   {p.Name}";
 
-        if (p.IsShell)
+        if (p.IsFolder)
+        {
+            Exif.Clear();
+            Exif.Add(new ExifRow("Folder", p.Name));
+            Exif.Add(new ExifRow("Open", "Double-click or Enter"));
+        }
+        else if (p.IsShell)
         {
             // camera items have no local file to read EXIF from — show basics until imported
             Exif.Clear();
@@ -389,8 +406,10 @@ public sealed partial class MainWindow : Window
     {
         switch (e.Key)
         {
-            case VirtualKey.Enter when ThumbGrid.SelectedItem is not null:
-                if (_preview) ExitPreview(); else EnterPreview();
+            case VirtualKey.Enter when ThumbGrid.SelectedItem is PhotoItem sel:
+                if (_preview) ExitPreview();
+                else if (sel.IsFolder) OpenFolderItem(sel);   // Enter on a folder navigates into it
+                else EnterPreview();
                 e.Handled = true;
                 break;
             case VirtualKey.Application when ThumbGrid.SelectedItem is PhotoItem ctx:   // Menu key
@@ -432,7 +451,8 @@ public sealed partial class MainWindow : Window
 
         // A verb may have deleted/renamed the file (Delete, Rename, Move to…). If it's gone, resync.
         // ponytail: existence check instead of a FileSystemWatcher — cheap, covers the destructive verbs.
-        if (!p.IsShell && !File.Exists(p.Path) && Directory.Exists(PathText.Text))
+        var stillThere = p.IsFolder ? Directory.Exists(p.Path) : File.Exists(p.Path);
+        if (!p.IsShell && !stillThere && Directory.Exists(PathText.Text))
             LoadFolder(PathText.Text);
     }
 
@@ -479,11 +499,29 @@ public sealed partial class MainWindow : Window
 
     private void OnItemDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (ThumbGrid.SelectedItem is not null) EnterPreview();
+        var p = FindDataContext<PhotoItem>(e.OriginalSource) ?? ThumbGrid.SelectedItem as PhotoItem;
+        if (p is null) return;
+        if (p.IsFolder) OpenFolderItem(p);
+        else EnterPreview();
+    }
+
+    /// Navigate into a folder shown in the grid, and follow along in the tree.
+    private void OpenFolderItem(PhotoItem p)
+    {
+        if (p.IsShell)
+        {
+            if (p.ShellRef is { } si) LoadShellFolder(si, p.Name);   // camera subfolder
+        }
+        else
+        {
+            LoadFolder(p.Path);
+            RevealInTree(p.Path);
+        }
     }
 
     private void EnterPreview()
     {
+        if (ThumbGrid.SelectedItem is PhotoItem { IsFolder: true }) return;   // folders have no preview
         _preview = true;
         ThumbLoader.Pause();   // big view has the stage: stop grinding out grid thumbnails
         ThumbGrid.Visibility = Visibility.Collapsed;
