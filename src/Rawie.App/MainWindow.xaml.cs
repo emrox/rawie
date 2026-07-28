@@ -440,6 +440,11 @@ public sealed partial class MainWindow : Window
                 else EnterPreview();
                 e.Handled = true;
                 break;
+            // Tab toggles between the folder tree and the photo grid only — the toolbar buttons and
+            // rating stars are reachable by mouse, and cycling through them just slows navigation.
+            case VirtualKey.Tab:
+                ToggleTreeGridFocus(); e.Handled = true; break;
+
             case VirtualKey.Application when ThumbGrid.SelectedItem is PhotoItem ctx:   // Menu key
                 ShowShellMenu(ctx); e.Handled = true; break;
 
@@ -530,6 +535,22 @@ public sealed partial class MainWindow : Window
         _modalDepth++;
         try { return await dlg.ShowAsync(); }
         finally { _modalDepth--; RestoreListFocus(); }
+    }
+
+    private void ToggleTreeGridFocus()
+    {
+        var focused = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Content.XamlRoot) as DependencyObject;
+        if (IsInside(focused, FolderTree))
+            RestoreListFocus();                          // tree -> grid (or preview)
+        else
+            FolderTree.Focus(FocusState.Programmatic);   // anywhere else -> tree
+    }
+
+    private static bool IsInside(DependencyObject? node, DependencyObject container)
+    {
+        for (; node is not null; node = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(node))
+            if (ReferenceEquals(node, container)) return true;
+        return false;
     }
 
     private void RestoreListFocus()
