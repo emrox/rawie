@@ -1,9 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using MetadataExtractor;
-using MetadataExtractor.Formats.Exif;
-using MetadataExtractor.Formats.GeoTiff;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -38,6 +35,7 @@ public sealed partial class MainWindow : Window
     private bool _preview;
     private int _exifToken;          // guards against stale async EXIF/preview updates
     private PhotoItem? _selectedPhoto;   // so the previous item's selection border can be cleared
+    private readonly Settings _settings = Settings.Load();
 
     public MainWindow()
     {
@@ -68,263 +66,6 @@ public sealed partial class MainWindow : Window
             });
         }
     }
-
-    // --- dynamic device detection: refresh drive/camera roots on plug/unplug ---
-    private delegate nint SubclassProc(nint hWnd, uint msg, nint wParam, nint lParam, nuint id, nint data);
-    [DllImport("comctl32.dll", SetLastError = true)]
-    private static extern bool SetWindowSubclass(nint hWnd, SubclassProc cb, nuint id, nuint data);
-    [DllImport("comctl32.dll")]
-    private static extern nint DefSubclassProc(nint hWnd, uint msg, nint wParam, nint lParam);
-
-    private const uint WM_DEVICECHANGE = 0x0219;
-    private SubclassProc? _subclass;         // keep the delegate alive (GC would crash the pump)
-    private DispatcherTimer? _deviceDebounce;
-
-    private void HookDeviceChanges()
-    {
-        _deviceDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
-        _deviceDebounce.Tick += (_, _) => { _deviceDebounce!.Stop(); RefreshRoots(); };
-
-        _subclass = OnWindowMessage;
-        var hwnd = WindowNative.GetWindowHandle(this);
-        var ok = SetWindowSubclass(hwnd, _subclass, 1, 0);
-        Diag.Log($"device hook installed: hwnd={hwnd:X}, ok={ok}");
-    }
-
-    private nint OnWindowMessage(nint hWnd, uint msg, nint wParam, nint lParam, nuint id, nint data)
-    {
-        // This runs for EVERY window message via native code — an exception escaping here corrupts
-        // the message pump. Never let one out.
-        try
-        {
-            // Owner-drawn menu items / fly-outs need these routed to the live IContextMenu2/3.
-            if (ShellMenu.HandleMenuMessage(msg, wParam, lParam, out var menuResult)) return menuResult;
-
-            if (msg == WM_DEVICECHANGE)
-            {
-                Diag.Log($"WM_DEVICECHANGE wParam={wParam:X}");
-                _deviceDebounce?.Stop();
-                _deviceDebounce?.Start();   // debounce the burst
-            }
-        }
-        catch (Exception e) { Diag.Log("wndproc: " + e.Message); }
-        return DefSubclassProc(hWnd, msg, wParam, lParam);
-    }
-
-    // Reconcile drive + camera roots against reality; leave Pictures and any expanded folders intact.
-    private void RefreshRoots()
-    {
-        try
-        {
-            // drop all camera/shell device roots (re-added fresh — reconnects get a valid ShellItem)
-            for (var i = Roots.Count - 1; i >= 0; i--)
-                if (Roots[i].Item is not null) Roots.RemoveAt(i);
-
-            // drives: remove gone, add new (USB sticks / card readers)
-            var current = DriveInfo.GetDrives().Where(d => d.IsReady)
-                .Select(d => d.RootDirectory.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            for (var i = Roots.Count - 1; i >= 0; i--)
-                if (Roots[i].IsDriveRoot && !current.Contains(Roots[i].Path)) Roots.RemoveAt(i);
-            var have = Roots.Where(r => r.IsDriveRoot).Select(r => r.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var d in DriveInfo.GetDrives().Where(x => x.IsReady))
-                if (!have.Contains(d.RootDirectory.FullName)) Roots.Add(NewDriveNode(d.RootDirectory.FullName, d.Name));
-
-            AddPortableDevices();
-            Diag.Log($"refresh roots -> {Roots.Count}");
-        }
-        catch (Exception e) { Diag.Log("refresh roots fail: " + e.Message); }
-    }
-
-    // --- left folder tree (bound mode; children fill lazily on expand) ---
-    public ObservableCollection<FolderNode> Roots { get; } = new();
-    private FolderNode? _selectedNode;   // so a programmatic reveal can clear the previous highlight
-    private readonly Settings _settings = Settings.Load();
-
-    private void PopulateTreeRoots()
-    {
-        try
-        {
-            var pics = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-            if (Directory.Exists(pics)) Roots.Add(NewFolder(pics, "Pictures"));
-            foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
-                Roots.Add(NewDriveNode(drive.RootDirectory.FullName, drive.Name));
-            AddPortableDevices();
-        }
-        catch (Exception e) { Diag.Log("tree roots fail: " + e.Message); }
-    }
-
-    // Cameras/phones in MTP mode: no drive letter, they live under "This PC" as shell items.
-    private void AddPortableDevices()
-    {
-        try
-        {
-            var pc = new ShellFolder(Shell32.KNOWNFOLDERID.FOLDERID_ComputerFolder);
-            foreach (var child in pc.EnumerateChildren(FolderItemFilter.Folders | FolderItemFilter.Storage, HWND.NULL))
-            {
-                bool isDrive;
-                try { isDrive = !string.IsNullOrEmpty(child.FileSystemPath); } catch { isDrive = false; }
-                if (isDrive) { child.Dispose(); continue; }   // drives already added via DriveInfo
-                Roots.Add(ShellFolderNode(child));            // keep the ShellItem alive in the node
-                Diag.Log($"tree: portable device '{child.Name}'");
-            }
-        }
-        catch (Exception e) { Diag.Log("portable devices fail: " + e.Message); }
-    }
-
-    private static FolderNode NewFolder(string path, string? name = null)
-    {
-        var fn = new FolderNode(path, name);
-        if (HasSubdirs(path)) fn.Children.Add(new FolderNode(path, "…"));   // placeholder -> shows expander
-        return fn;
-    }
-
-    private static FolderNode NewDriveNode(string path, string name)
-    {
-        var fn = NewFolder(path, name);
-        fn.IsDriveRoot = true;
-        return fn;
-    }
-
-    private static FolderNode ShellFolderNode(ShellItem item)
-    {
-        var fn = new FolderNode(item.ParsingName ?? item.Name, item.Name) { Item = item };
-        if (ShellHasSubfolders(item)) fn.Children.Add(new FolderNode(fn.Path, "…"));
-        return fn;
-    }
-
-    private static bool ShellHasSubfolders(ShellItem item)
-    {
-        try
-        {
-            var sf = new ShellFolder(item);   // no using: don't dispose the item we keep in the tree
-            foreach (var c in sf.EnumerateChildren(FolderItemFilter.Folders, HWND.NULL)) { c.Dispose(); return true; }
-            return false;
-        }
-        catch { return false; }
-    }
-
-    private static bool HasSubdirs(string path)
-    {
-        try { return Directory.EnumerateDirectories(path).Any(d => !IsHiddenDir(d)); }
-        catch { return false; }   // access-denied / not-ready volumes just show no expander
-    }
-
-    private static bool IsHiddenDir(string dir)
-    {
-        try { var a = File.GetAttributes(dir); return a.HasFlag(System.IO.FileAttributes.Hidden) || a.HasFlag(System.IO.FileAttributes.System); }
-        catch { return true; }
-    }
-
-    private void OnFolderExpanding(TreeView sender, TreeViewExpandingEventArgs args)
-    {
-        if (args.Item is FolderNode fn) EnsureChildren(fn);
-    }
-
-    /// Populate a node's real children (replacing the "…" placeholder). Idempotent.
-    private static void EnsureChildren(FolderNode fn)
-    {
-        if (fn.Loaded) return;
-        fn.Loaded = true;
-        fn.Children.Clear();   // drop the placeholder
-        try
-        {
-            if (fn.Item is not null)   // shell (camera) folder
-            {
-                var sf = new ShellFolder(fn.Item);
-                foreach (var child in sf.EnumerateChildren(FolderItemFilter.Folders, HWND.NULL)
-                             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
-                    fn.Children.Add(ShellFolderNode(child));
-            }
-            else                       // filesystem folder
-            {
-                foreach (var dir in Directory.EnumerateDirectories(fn.Path)
-                             .Where(d => !IsHiddenDir(d))
-                             .OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
-                    fn.Children.Add(NewFolder(dir));
-            }
-        }
-        catch (Exception e) { Diag.Log("expand fail: " + e.Message); }
-    }
-
-    /// Expand the tree down to `path` and select it, so the pane shows where we are.
-    private void RevealInTree(string path)
-    {
-        try
-        {
-            path = path.TrimEnd('\\');
-            // Deepest root that contains the path (prefer "Pictures" over "C:\" when both match).
-            var root = Roots.Where(r => r.Item is null && !string.IsNullOrEmpty(r.Path)
-                                        && path.StartsWith(r.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-                            .OrderByDescending(r => r.Path.Length)
-                            .FirstOrDefault();
-            if (root is null) return;
-
-            var node = root;
-            EnsureChildren(node);
-            node.IsExpanded = true;
-
-            var walked = root.Path.TrimEnd('\\');
-            foreach (var seg in path[walked.Length..].Split('\\', StringSplitOptions.RemoveEmptyEntries))
-            {
-                walked += "\\" + seg;
-                var next = node.Children.FirstOrDefault(
-                    c => string.Equals(c.Path.TrimEnd('\\'), walked, StringComparison.OrdinalIgnoreCase));
-                if (next is null) return;   // hidden/inaccessible somewhere along the way
-                node = next;
-                EnsureChildren(node);
-                node.IsExpanded = true;
-            }
-            if (_selectedNode is { } prev && prev != node) prev.IsSelected = false;
-            _selectedNode = node;
-            node.IsSelected = true;
-
-            // The deep node's container may not exist yet (expansion runs through bindings), so
-            // re-apply once layout has caught up.
-            var target = node;
-            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-            {
-                target.IsSelected = true;
-                FolderTree.SelectedItem = target;
-            });
-        }
-        catch (Exception e) { Diag.Log("reveal fail: " + e.Message); }
-    }
-
-    private void OnFolderInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
-    {
-        if (args.InvokedItem is not FolderNode fn) return;
-        if (fn.Item is not null) LoadShellFolder(fn.Item, fn.Name);
-        else LoadFolder(fn.Path);
-    }
-
-    // Load a camera folder's media (shell items) into the grid.
-    private void LoadShellFolder(ShellItem folder, string displayName)
-    {
-        if (_preview) ExitPreview();
-        ThumbLoader.Reset();
-        PathText.Text = displayName + "  (camera)";
-
-        var list = new List<PhotoItem>();
-        try
-        {
-            var sf = new ShellFolder(folder);
-            foreach (var sub in sf.EnumerateChildren(FolderItemFilter.Folders, HWND.NULL)
-                         .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
-                list.Add(new PhotoItem(sub, isFolder: true));
-
-            foreach (var child in sf.EnumerateChildren(FolderItemFilter.NonFolders, HWND.NULL)
-                         .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                if (MediaExts.Contains(Path.GetExtension(child.Name))) list.Add(new PhotoItem(child));
-                else child.Dispose();
-            }
-        }
-        catch (Exception e) { Diag.Log("load shell folder fail: " + e.Message); }
-
-        SetItems(list);
-        Diag.Log($"loaded {list.Count} shell items from '{displayName}'");
-    }
-
 
     private void LoadFolder(string path)
     {
@@ -368,6 +109,57 @@ public sealed partial class MainWindow : Window
         if (list.Count > 0) ThumbGrid.SelectedIndex = 0;
     }
 
+    // --- shared window helpers (focus, modal dialogs, HWND) ---
+    private HWND Hwnd => WindowNative.GetWindowHandle(this);
+
+    private int _modalDepth;
+
+    /// Show a dialog with app hotkeys suppressed for its lifetime, then hand focus back to the
+    /// photos — otherwise focus lands in the folder tree and the arrow keys stop navigating images.
+    private async Task<ContentDialogResult> ShowModalAsync(ContentDialog dlg)
+    {
+        _modalDepth++;
+        try { return await dlg.ShowAsync(); }
+        finally { _modalDepth--; RestoreListFocus(); }
+    }
+
+    private void ToggleTreeGridFocus()
+    {
+        var focused = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Content.XamlRoot) as DependencyObject;
+        if (IsInside(focused, FolderTree))
+            RestoreListFocus();                          // tree -> grid (or preview)
+        else
+            FolderTree.Focus(FocusState.Programmatic);   // anywhere else -> tree
+    }
+
+    private static bool IsInside(DependencyObject? node, DependencyObject container)
+    {
+        for (; node is not null; node = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(node))
+            if (ReferenceEquals(node, container)) return true;
+        return false;
+    }
+
+    private void RestoreListFocus()
+    {
+        void Apply()
+        {
+            if (_preview) { PreviewPanel.Focus(FocusState.Programmatic); return; }
+
+            // Focus the selected item's container, not just the GridView: arrow keys only move the
+            // selection when the item itself holds focus.
+            if (ThumbGrid.SelectedIndex >= 0 &&
+                ThumbGrid.ContainerFromIndex(ThumbGrid.SelectedIndex) is Control item)
+                item.Focus(FocusState.Programmatic);
+            else
+                ThumbGrid.Focus(FocusState.Programmatic);
+        }
+
+        Apply();
+        // A ContentDialog restores focus to whatever it stole it from *after* it closes, which would
+        // undo the line above — so apply again once that has happened.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Apply);
+    }
+
     // --- thumbnails: load only realized (visible) cells ---
     private void OnContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
@@ -405,7 +197,7 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            var rows = await Task.Run(() => ReadInfo(p.Path));
+            var rows = await Task.Run(() => ExifInfo.Read(p.Path));
             if (token != _exifToken) return;   // selection moved on; drop stale result
             Exif.Clear();
             foreach (var r in rows) Exif.Add(r);
@@ -477,215 +269,6 @@ public sealed partial class MainWindow : Window
             case VirtualKey.Right when _preview:
                 Move(1); e.Handled = true; break;
         }
-    }
-
-    // --- interactive 5-star control in the info pane ---
-    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush StarGold = new(Microsoft.UI.Colors.Gold);
-    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush StarDim = new(Microsoft.UI.Colors.Gray);
-    private static readonly Microsoft.UI.Xaml.Media.SolidColorBrush StarRed = new(Microsoft.UI.Colors.OrangeRed);
-
-    private void UpdateRatingStars(PhotoItem? p)
-    {
-        // Nothing rateable selected (folder / camera item) -> hide the control rather than lie.
-        var rateable = p is { IsFolder: false, IsShell: false };
-        RatingStars.Visibility = rateable ? Visibility.Visible : Visibility.Collapsed;
-        if (!rateable) return;
-
-        var rating = p!.Rating;
-        var n = 1;
-        foreach (var star in RatingStars.Children.OfType<TextBlock>())
-        {
-            if (ReferenceEquals(star, RejectMark)) continue;
-            var filled = rating >= n;
-            star.Text = filled ? "★" : "☆";
-            star.Foreground = filled ? StarGold : StarDim;
-            n++;
-        }
-        RejectMark.Foreground = rating == Xmp.Rejected ? StarRed : StarDim;
-    }
-
-    private void OnStarTapped(object sender, TappedRoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement { Tag: string tag } || !int.TryParse(tag, out var stars)) return;
-        var current = (ThumbGrid.SelectedItem as PhotoItem)?.Rating ?? 0;
-        SetRating(current == stars ? 0 : stars);   // clicking the current rating clears it
-        e.Handled = true;
-    }
-
-    private void OnRejectTapped(object sender, TappedRoutedEventArgs e)
-    {
-        var current = (ThumbGrid.SelectedItem as PhotoItem)?.Rating ?? 0;
-        SetRating(current == Xmp.Rejected ? 0 : Xmp.Rejected);
-        e.Handled = true;
-    }
-
-    private void ShowPreviewRating(PhotoItem p)
-    {
-        PreviewRating.Text = p.RatingText;
-        PreviewRating.Foreground = p.RatingBrush;
-        PreviewRatingBox.Visibility = p.RatingVisibility;
-    }
-
-    // --- delete / rename / move (IFileOperation) ---
-
-    private static List<string> WithCompanions(string photoPath) =>
-        Xmp.FilesToMoveWith(photoPath, f => MediaExts.Contains(Path.GetExtension(f)));
-
-    private HWND Hwnd => WindowNative.GetWindowHandle(this);
-
-    private int _modalDepth;
-
-    /// Show a dialog with app hotkeys suppressed for its lifetime, then hand focus back to the
-    /// photos — otherwise focus lands in the folder tree and the arrow keys stop navigating images.
-    private async Task<ContentDialogResult> ShowModalAsync(ContentDialog dlg)
-    {
-        _modalDepth++;
-        try { return await dlg.ShowAsync(); }
-        finally { _modalDepth--; RestoreListFocus(); }
-    }
-
-    private void ToggleTreeGridFocus()
-    {
-        var focused = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Content.XamlRoot) as DependencyObject;
-        if (IsInside(focused, FolderTree))
-            RestoreListFocus();                          // tree -> grid (or preview)
-        else
-            FolderTree.Focus(FocusState.Programmatic);   // anywhere else -> tree
-    }
-
-    private static bool IsInside(DependencyObject? node, DependencyObject container)
-    {
-        for (; node is not null; node = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(node))
-            if (ReferenceEquals(node, container)) return true;
-        return false;
-    }
-
-    private void RestoreListFocus()
-    {
-        void Apply()
-        {
-            if (_preview) { PreviewPanel.Focus(FocusState.Programmatic); return; }
-
-            // Focus the selected item's container, not just the GridView: arrow keys only move the
-            // selection when the item itself holds focus.
-            if (ThumbGrid.SelectedIndex >= 0 &&
-                ThumbGrid.ContainerFromIndex(ThumbGrid.SelectedIndex) is Control item)
-                item.Focus(FocusState.Programmatic);
-            else
-                ThumbGrid.Focus(FocusState.Programmatic);
-        }
-
-        Apply();
-        // A ContentDialog restores focus to whatever it stole it from *after* it closes, which would
-        // undo the line above — so apply again once that has happened.
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Apply);
-    }
-
-    private void DeleteSelected()
-    {
-        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "deleted")) return;
-        var index = ThumbGrid.SelectedIndex;
-        if (FileOps.Recycle(WithCompanions(p.Path), Hwnd))
-        {
-            StatusText.Text = $"{p.Name} — moved to Recycle Bin";
-            ReloadKeepingPosition(index);
-        }
-    }
-
-    private async void RenameSelected()
-    {
-        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "renamed")) return;
-        var index = ThumbGrid.SelectedIndex;
-
-        // Pre-select the name but not the extension, like Explorer's rename.
-        var box = new TextBox { Text = p.Name, SelectionStart = 0, SelectionLength = Path.GetFileNameWithoutExtension(p.Name).Length };
-        box.Loaded += (_, _) => box.Focus(FocusState.Programmatic);
-        var dlg = new ContentDialog
-        {
-            Title = "Rename",
-            Content = box,
-            PrimaryButtonText = "Rename",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = Content.XamlRoot,
-        };
-        if (await ShowModalAsync(dlg) != ContentDialogResult.Primary) return;
-
-        var newName = box.Text.Trim();
-        if (newName.Length == 0 || newName == p.Name) return;
-
-        var ok = FileOps.Rename(p.Path, newName, Hwnd);
-        // Keep the sidecar matched to its photo (only when it isn't shared with a partner file).
-        var side = Xmp.SidecarFor(p.Path);
-        if (ok && WithCompanions(p.Path).Contains(side) && File.Exists(side))
-            FileOps.Rename(side, Path.GetFileNameWithoutExtension(newName) + ".xmp", Hwnd);
-
-        if (ok) { StatusText.Text = $"Renamed to {newName}"; ReloadKeepingPosition(index); }
-    }
-
-    private async void MoveSelected()
-    {
-        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "moved")) return;
-        var index = ThumbGrid.SelectedIndex;
-        var dest = await PickFolderAsync();
-        if (dest is null || string.Equals(dest, Path.GetDirectoryName(p.Path), StringComparison.OrdinalIgnoreCase)) return;
-
-        if (FileOps.Move(WithCompanions(p.Path), dest, Hwnd))
-        {
-            StatusText.Text = $"{p.Name} — moved to {dest}";
-            ReloadKeepingPosition(index);
-        }
-    }
-
-    /// Guard: folders and camera items aren't file-operable here.
-    private bool Rateable(PhotoItem p, string verb)
-    {
-        if (p.IsShell) { StatusText.Text = $"Camera items can't be {verb} — import first"; return false; }
-        if (p.IsFolder) { StatusText.Text = $"Folders can't be {verb} from here (use right-click)"; return false; }
-        return true;
-    }
-
-    /// Re-read the folder after a file operation, keeping the user where they were — the culling
-    /// flow depends on landing on the next photo rather than jumping back to the start.
-    private void ReloadKeepingPosition(int index)
-    {
-        var wasPreview = _preview;
-        var folder = PathText.Text;
-        if (!Directory.Exists(folder)) return;
-
-        LoadFolder(folder);
-        if (_current.Count == 0) return;
-
-        ThumbGrid.SelectedIndex = Math.Min(index, _current.Count - 1);
-        if (wasPreview) EnterPreview();
-        else RestoreListFocus();   // keep arrow-key navigation alive after a file operation
-    }
-
-    /// Write a rating to the sidecar and reflect it in the UI.
-    private void SetRating(int rating)
-    {
-        if (ThumbGrid.SelectedItem is not PhotoItem p) return;
-        if (p.IsFolder || p.IsShell)
-        {
-            StatusText.Text = p.IsShell ? "Rating needs the file on disk — import it first" : "Folders can't be rated";
-            return;
-        }
-        if (!Xmp.Write(p.Path, rating)) { StatusText.Text = "Couldn't write rating (file read-only?)"; return; }
-
-        // A RAW+JPEG pair shares one sidecar, so update every item pointing at it.
-        var side = Xmp.SidecarFor(p.Path);
-        foreach (var it in _current)
-            if (!it.IsFolder && !it.IsShell && string.Equals(Xmp.SidecarFor(it.Path), side, StringComparison.OrdinalIgnoreCase))
-                it.Rating = rating;
-
-        ShowPreviewRating(p);
-        UpdateRatingStars(p);
-        StatusText.Text = rating switch
-        {
-            Xmp.Rejected => $"{p.Name} — rejected",
-            0 => $"{p.Name} — rating cleared",
-            _ => $"{p.Name} — {rating} star{(rating == 1 ? "" : "s")}",
-        };
     }
 
     private static bool IsCtrlDown() =>
@@ -909,48 +492,6 @@ public sealed partial class MainWindow : Window
         InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
         var folder = await picker.PickSingleFolderAsync();
         if (folder is not null) { LoadFolder(folder.Path); RevealInTree(folder.Path); }
-    }
-
-    // --- info/EXIF (MetadataExtractor, off the UI thread) ---
-    private static List<ExifRow> ReadInfo(string path)
-    {
-        var rows = new List<ExifRow>();
-        try { rows.Add(new ExifRow("File", Path.GetFileName(path))); } catch { }
-
-        try
-        {
-            var dirs = ImageMetadataReader.ReadMetadata(path);
-            var exif = dirs.OfType<ExifDirectoryBase>().ToList();
-            var gps = dirs.OfType<GpsDirectory>().FirstOrDefault();
-
-            // Search across every EXIF IFD (IFD0, the real Exif SubIFD, preview SubIFDs, …).
-            // Different RAW makers scatter the same tags into different sub-IFDs, so picking one
-            // directory misses fields (NEF/DNG put exposure/ISO in a SubIFD that isn't the first).
-            string? Val(int tag) => exif.Select(d => d.GetDescription(tag))
-                                        .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-            void Add(string label, string? val) { if (!string.IsNullOrWhiteSpace(val)) rows.Add(new ExifRow(label, val!)); }
-
-            var cam = string.Join(" ", new[] { Val(ExifDirectoryBase.TagMake), Val(ExifDirectoryBase.TagModel) }
-                .Where(x => !string.IsNullOrWhiteSpace(x)));
-            Add("Camera", cam);
-            Add("Lens", Val(ExifDirectoryBase.TagLensModel));
-            Add("Date taken", Val(ExifDirectoryBase.TagDateTimeOriginal) ?? Val(ExifDirectoryBase.TagDateTime));
-            Add("Exposure", Val(ExifDirectoryBase.TagExposureTime));
-            Add("Aperture", Val(ExifDirectoryBase.TagFNumber));
-            Add("ISO", Val(ExifDirectoryBase.TagIsoEquivalent));
-            Add("Focal length", Val(ExifDirectoryBase.TagFocalLength));
-            Add("Exposure bias", Val(ExifDirectoryBase.TagExposureBias));
-            Add("Flash", Val(ExifDirectoryBase.TagFlash));
-
-            var w = Val(ExifDirectoryBase.TagExifImageWidth);
-            var h = Val(ExifDirectoryBase.TagExifImageHeight);
-            if (w is not null && h is not null) Add("Dimensions", $"{w} × {h}");
-            if (gps?.GetGeoLocation() is { } loc) Add("GPS", $"{loc.Latitude:F5}, {loc.Longitude:F5}");
-        }
-        catch (Exception e) { Diag.Log("exif fail: " + e.Message); }
-
-        try { rows.Add(new ExifRow("Size", $"{new FileInfo(path).Length / 1048576.0:F1} MB")); } catch { }
-        return rows;
     }
 
     private static string? FindTestData()
