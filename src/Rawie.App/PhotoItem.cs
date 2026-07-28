@@ -79,6 +79,24 @@ public sealed class PhotoItem : INotifyPropertyChanged
     public Microsoft.UI.Xaml.Visibility RatingVisibility =>
         Rating == 0 ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 
+    // Selection is drawn by the item template rather than the GridViewItem chrome: the card in the
+    // template is opaque and hides the container's own selection border, and the system focus ring
+    // duplicated it. One border, always visible, whether or not the grid has focus.
+    private static readonly SolidColorBrush Clear = new(Microsoft.UI.Colors.Transparent);
+    private static SolidColorBrush? _accent;
+    private static SolidColorBrush Accent => _accent ??=
+        Microsoft.UI.Xaml.Application.Current.Resources["AccentFillColorDefaultBrush"] as SolidColorBrush
+        ?? new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue);
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected != value) { _isSelected = value; Raise(); Raise(nameof(SelectionBrush)); } }
+    }
+
+    public Brush SelectionBrush => IsSelected ? Accent : Clear;
+
     /// Read the stored rating (cheap: usually just a File.Exists miss).
     public void LoadRating()
     {

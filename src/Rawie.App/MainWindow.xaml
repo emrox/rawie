@@ -41,14 +41,29 @@
             <Grid Grid.Row="1">
                 <GridView x:Name="ThumbGrid" Padding="8"
                           SelectionMode="Single"
+                          SingleSelectionFollowsFocus="True"
+                          UseSystemFocusVisuals="False"
                           SelectionChanged="OnSelectionChanged"
                           DoubleTapped="OnItemDoubleTapped"
                           RightTapped="OnItemRightTapped"
                           ContainerContentChanging="OnContainerContentChanging">
+                    <!-- The focus ring is drawn by the item container, so it has to be switched off
+                         here rather than on the GridView. Selection follows focus, so the blue
+                         selection border already shows where you are. -->
+                    <GridView.ItemContainerStyle>
+                        <Style TargetType="GridViewItem">
+                            <Setter Property="UseSystemFocusVisuals" Value="False" />
+                            <Setter Property="FocusVisualPrimaryThickness" Value="0" />
+                            <Setter Property="FocusVisualSecondaryThickness" Value="0" />
+                            <Setter Property="FocusVisualPrimaryBrush" Value="Transparent" />
+                            <Setter Property="FocusVisualSecondaryBrush" Value="Transparent" />
+                        </Style>
+                    </GridView.ItemContainerStyle>
                     <GridView.ItemTemplate>
                         <DataTemplate x:DataType="local:PhotoItem">
                             <Grid Width="184" Height="184" Margin="4" RowDefinitions="*,Auto"
                                   Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                  BorderBrush="{x:Bind SelectionBrush, Mode=OneWay}" BorderThickness="2"
                                   CornerRadius="4">
                                 <Image Grid.Row="0" Source="{x:Bind Thumb, Mode=OneWay}" Stretch="Uniform" Margin="4" />
                                 <Border Grid.Row="0" VerticalAlignment="Bottom" HorizontalAlignment="Center"

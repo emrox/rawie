@@ -36,7 +36,8 @@ public sealed partial class MainWindow : Window
     public ObservableCollection<ExifRow> Exif { get; } = new();
 
     private bool _preview;
-    private int _exifToken;   // guards against stale async EXIF/preview updates
+    private int _exifToken;          // guards against stale async EXIF/preview updates
+    private PhotoItem? _selectedPhoto;   // so the previous item's selection border can be cleared
 
     public MainWindow()
     {
@@ -58,8 +59,13 @@ public sealed partial class MainWindow : Window
         if (start is not null && Directory.Exists(start))
         {
             LoadFolder(start);
-            // Defer: the tree needs a layout pass before selection/expansion sticks.
-            DispatcherQueue.TryEnqueue(() => RevealInTree(start));
+            // Defer: the tree needs a layout pass before selection/expansion sticks. Focus lands in
+            // the grid afterwards so the arrow keys work immediately, without clicking a photo first.
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                RevealInTree(start);
+                RestoreListFocus();
+            });
         }
     }
 
@@ -372,6 +378,12 @@ public sealed partial class MainWindow : Window
     private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ThumbGrid.SelectedItem is not PhotoItem p) return;
+
+        // Drive the template's selection border (see PhotoItem.SelectionBrush).
+        if (_selectedPhoto is { } prev && !ReferenceEquals(prev, p)) prev.IsSelected = false;
+        _selectedPhoto = p;
+        p.IsSelected = true;
+
         var token = ++_exifToken;
         StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_current.Count}   {p.Name}";
         ShowPreviewRating(p);
@@ -538,11 +550,7 @@ public sealed partial class MainWindow : Window
         Apply();
         // A ContentDialog restores focus to whatever it stole it from *after* it closes, which would
         // undo the line above — so apply again once that has happened.
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-        {
-            Apply();
-            Diag.Log($"FOCUSCHECK -> {Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Content.XamlRoot)?.GetType().Name ?? "null"}");
-        });
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Apply);
     }
 
     private void DeleteSelected()
