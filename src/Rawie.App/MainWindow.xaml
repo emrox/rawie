@@ -4,7 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:Rawie.App">
 
-    <Grid x:Name="Root" ColumnDefinitions="260,*,Auto">
+    <!-- KeyboardAcceleratorPlacementMode=Hidden: the root Grid spans the window, so WinUI's automatic
+         "Ctrl+O" accelerator tooltip would pop up whenever the pointer sits over empty space. -->
+    <Grid x:Name="Root" ColumnDefinitions="260,*,Auto" KeyboardAcceleratorPlacementMode="Hidden">
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnOpenExternalAccel" />
         </Grid.KeyboardAccelerators>
