@@ -84,6 +84,9 @@ public sealed partial class MainWindow : Window
         // the message pump. Never let one out.
         try
         {
+            // Owner-drawn menu items / fly-outs need these routed to the live IContextMenu2/3.
+            if (ShellMenu.HandleMenuMessage(msg, wParam, lParam, out var menuResult)) return menuResult;
+
             if (msg == WM_DEVICECHANGE)
             {
                 Diag.Log($"WM_DEVICECHANGE wParam={wParam:X}");
@@ -334,6 +337,8 @@ public sealed partial class MainWindow : Window
                 if (_preview) ExitPreview(); else EnterPreview();
                 e.Handled = true;
                 break;
+            case VirtualKey.Application when ThumbGrid.SelectedItem is PhotoItem ctx:   // Menu key
+                ShowShellMenu(ctx); e.Handled = true; break;
             case VirtualKey.Escape when _preview:
                 ExitPreview(); e.Handled = true; break;
             case VirtualKey.Left when _preview:
@@ -347,6 +352,73 @@ public sealed partial class MainWindow : Window
     {
         var i = ThumbGrid.SelectedIndex + delta;
         if (i >= 0 && i < _current.Count) ThumbGrid.SelectedIndex = i;
+    }
+
+    // --- real Explorer context menu (Vanara hosts IContextMenu; it pumps the menu messages itself,
+    //     so no window subclassing / HandleMenuMsg2 plumbing is needed here) ---
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    private void OnItemRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        var p = FindDataContext<PhotoItem>(e.OriginalSource);
+        if (p is null) return;
+        ThumbGrid.SelectedItem = p;      // right-click selects, like Explorer
+        e.Handled = true;
+        ShowShellMenu(p);
+    }
+
+    private void ShowShellMenu(PhotoItem p)
+    {
+        // Camera items own a live ShellItem (never dispose it); filesystem items get a temporary one.
+        if (p.ShellRef is { } live) ShowMenuFor(live);
+        else ShowMenuForPath(p.Path);
+
+        // A verb may have deleted/renamed the file (Delete, Rename, Move to…). If it's gone, resync.
+        // ponytail: existence check instead of a FileSystemWatcher — cheap, covers the destructive verbs.
+        if (!p.IsShell && !File.Exists(p.Path) && Directory.Exists(PathText.Text))
+            LoadFolder(PathText.Text);
+    }
+
+    // Right-click in the folder tree: same real Explorer menu for folders, drives and cameras.
+    private void OnTreeRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        // Walk up the visual tree: a click on the row's padding/indent/expander has a DataContext
+        // that isn't the FolderNode, so checking OriginalSource alone silently misses most of the row.
+        var fn = FindDataContext<FolderNode>(e.OriginalSource);
+        if (fn is null) return;
+        e.Handled = true;
+        if (fn.Item is { } live) ShowMenuFor(live);          // camera / shell node
+        else if (Directory.Exists(fn.Path)) ShowMenuForPath(fn.Path);
+    }
+
+    private static T? FindDataContext<T>(object? source) where T : class
+    {
+        var d = source as DependencyObject;
+        while (d is not null)
+        {
+            if (d is FrameworkElement fe && fe.DataContext is T hit) return hit;
+            d = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(d);
+        }
+        return null;
+    }
+
+    // A shell menu runs its own modal message loop. Starting that from *inside* a XAML input handler
+    // races the island's input processing — the menu often never appears. Always defer to the
+    // dispatcher so the right-click event finishes first.
+    private void ShowMenuForPath(string path)
+    {
+        GetCursorPos(out var pt);   // capture now; the deferred call happens a few ms later
+        DispatcherQueue.TryEnqueue(() =>
+            ShellMenu.ShowForPath(path, WindowNative.GetWindowHandle(this), pt));
+    }
+
+    private void ShowMenuFor(ShellItem item)
+    {
+        GetCursorPos(out var pt);
+        var pidl = item.PIDL;
+        DispatcherQueue.TryEnqueue(() =>
+            ShellMenu.ShowForPidl(pidl, WindowNative.GetWindowHandle(this), pt));
     }
 
     private void OnItemDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)

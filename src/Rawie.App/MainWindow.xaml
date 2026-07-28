@@ -13,7 +13,8 @@
         <Border Grid.Column="0" BorderThickness="0,0,1,0"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
             <TreeView x:Name="FolderTree" Padding="4" ItemsSource="{x:Bind Roots}"
-                      Expanding="OnFolderExpanding" ItemInvoked="OnFolderInvoked">
+                      Expanding="OnFolderExpanding" ItemInvoked="OnFolderInvoked"
+                      RightTapped="OnTreeRightTapped">
                 <TreeView.ItemTemplate>
                     <DataTemplate x:DataType="local:FolderNode">
                         <TreeViewItem ItemsSource="{x:Bind Children}" Content="{x:Bind Name}"
@@ -36,6 +37,7 @@
                           SelectionMode="Single"
                           SelectionChanged="OnSelectionChanged"
                           DoubleTapped="OnItemDoubleTapped"
+                          RightTapped="OnItemRightTapped"
                           ContainerContentChanging="OnContainerContentChanging">
                     <GridView.ItemTemplate>
                         <DataTemplate x:DataType="local:PhotoItem">

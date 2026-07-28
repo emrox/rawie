@@ -15,6 +15,9 @@ class Program
     [STAThread]
     static int Main(string[] args)
     {
+        if (args is ["--probe", var probePath, var mode, ..])
+            return Probe.Run(probePath, mode, args.Length > 3 && int.TryParse(args[3], out var it) ? it : 40);
+
         var show = args.Contains("--show");
         var pathArgs = args.Where(a => a != "--show").ToArray();
         var files = (pathArgs.Length > 0 ? pathArgs : DefaultFiles()).Where(File.Exists).ToArray();

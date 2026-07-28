@@ -23,6 +23,10 @@ public sealed class PhotoItem : INotifyPropertyChanged
     private readonly ShellItem? _shell;   // non-null for camera/MTP items
     public bool IsShell => _shell is not null;
 
+    /// The live ShellItem for camera items (do NOT dispose — background thumbnail work may use it).
+    /// Filesystem items return null; callers create a short-lived ShellItem from Path instead.
+    public ShellItem? ShellRef => _shell;
+
     public PhotoItem(string path)
     {
         Path = path;
