@@ -13,11 +13,14 @@
         <Border Grid.Column="0" BorderThickness="0,0,1,0"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
             <TreeView x:Name="FolderTree" Padding="4" ItemsSource="{x:Bind Roots}"
+                      SelectionMode="Single"
                       Expanding="OnFolderExpanding" ItemInvoked="OnFolderInvoked"
                       RightTapped="OnTreeRightTapped">
                 <TreeView.ItemTemplate>
                     <DataTemplate x:DataType="local:FolderNode">
                         <TreeViewItem ItemsSource="{x:Bind Children}" Content="{x:Bind Name}"
+                                      IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
+                                      IsSelected="{x:Bind IsSelected, Mode=TwoWay}"
                                       AutomationProperties.Name="{x:Bind Name}" />
                     </DataTemplate>
                 </TreeView.ItemTemplate>

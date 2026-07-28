@@ -53,7 +53,12 @@ public sealed partial class MainWindow : Window
         var args = Environment.GetCommandLineArgs();
         var idx = Array.IndexOf(args, "--folder");
         var start = idx >= 0 && idx + 1 < args.Length ? args[idx + 1] : FindTestData();
-        if (start is not null && Directory.Exists(start)) LoadFolder(start);
+        if (start is not null && Directory.Exists(start))
+        {
+            LoadFolder(start);
+            // Defer: the tree needs a layout pass before selection/expansion sticks.
+            DispatcherQueue.TryEnqueue(() => RevealInTree(start));
+        }
     }
 
     // --- dynamic device detection: refresh drive/camera roots on plug/unplug ---
@@ -124,6 +129,7 @@ public sealed partial class MainWindow : Window
 
     // --- left folder tree (bound mode; children fill lazily on expand) ---
     public ObservableCollection<FolderNode> Roots { get; } = new();
+    private FolderNode? _selectedNode;   // so a programmatic reveal can clear the previous highlight
 
     private void PopulateTreeRoots()
     {
@@ -202,7 +208,13 @@ public sealed partial class MainWindow : Window
 
     private void OnFolderExpanding(TreeView sender, TreeViewExpandingEventArgs args)
     {
-        if (args.Item is not FolderNode fn || fn.Loaded) return;
+        if (args.Item is FolderNode fn) EnsureChildren(fn);
+    }
+
+    /// Populate a node's real children (replacing the "…" placeholder). Idempotent.
+    private static void EnsureChildren(FolderNode fn)
+    {
+        if (fn.Loaded) return;
         fn.Loaded = true;
         fn.Children.Clear();   // drop the placeholder
         try
@@ -223,6 +235,50 @@ public sealed partial class MainWindow : Window
             }
         }
         catch (Exception e) { Diag.Log("expand fail: " + e.Message); }
+    }
+
+    /// Expand the tree down to `path` and select it, so the pane shows where we are.
+    private void RevealInTree(string path)
+    {
+        try
+        {
+            path = path.TrimEnd('\\');
+            // Deepest root that contains the path (prefer "Pictures" over "C:\" when both match).
+            var root = Roots.Where(r => r.Item is null && !string.IsNullOrEmpty(r.Path)
+                                        && path.StartsWith(r.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                            .OrderByDescending(r => r.Path.Length)
+                            .FirstOrDefault();
+            if (root is null) return;
+
+            var node = root;
+            EnsureChildren(node);
+            node.IsExpanded = true;
+
+            var walked = root.Path.TrimEnd('\\');
+            foreach (var seg in path[walked.Length..].Split('\\', StringSplitOptions.RemoveEmptyEntries))
+            {
+                walked += "\\" + seg;
+                var next = node.Children.FirstOrDefault(
+                    c => string.Equals(c.Path.TrimEnd('\\'), walked, StringComparison.OrdinalIgnoreCase));
+                if (next is null) return;   // hidden/inaccessible somewhere along the way
+                node = next;
+                EnsureChildren(node);
+                node.IsExpanded = true;
+            }
+            if (_selectedNode is { } prev && prev != node) prev.IsSelected = false;
+            _selectedNode = node;
+            node.IsSelected = true;
+
+            // The deep node's container may not exist yet (expansion runs through bindings), so
+            // re-apply once layout has caught up.
+            var target = node;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                target.IsSelected = true;
+                FolderTree.SelectedItem = target;
+            });
+        }
+        catch (Exception e) { Diag.Log("reveal fail: " + e.Message); }
     }
 
     private void OnFolderInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
@@ -467,7 +523,7 @@ public sealed partial class MainWindow : Window
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
         var folder = await picker.PickSingleFolderAsync();
-        if (folder is not null) LoadFolder(folder.Path);
+        if (folder is not null) { LoadFolder(folder.Path); RevealInTree(folder.Path); }
     }
 
     // --- info/EXIF (MetadataExtractor, off the UI thread) ---

@@ -202,7 +202,7 @@ public sealed class ExifRow
 // A folder node in the left tree (bound-mode TreeView item). Children fill lazily on expand;
 // a single placeholder child makes the expander chevron appear before real children load.
 // Item is set for shell/camera folders (no filesystem path); null for filesystem folders.
-public sealed class FolderNode
+public sealed class FolderNode : INotifyPropertyChanged
 {
     public string Path { get; }
     public string Name { get; }
@@ -210,6 +210,26 @@ public sealed class FolderNode
     public bool IsDriveRoot { get; set; }         // set for drive-letter roots (for device refresh)
     public ObservableCollection<FolderNode> Children { get; } = new();
     public bool Loaded { get; set; }
+
+    // Two-way bound to TreeViewItem.IsExpanded so we can expand nodes programmatically
+    // (bound-mode TreeView gives no direct handle on its TreeViewNodes).
+    private bool _isExpanded;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { if (_isExpanded != value) { _isExpanded = value; PropertyChanged?.Invoke(this, new(nameof(IsExpanded))); } }
+    }
+
+    // Likewise for selection: setting TreeView.SelectedItem in bound mode doesn't paint the
+    // highlight, but the container's own IsSelected does.
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected != value) { _isSelected = value; PropertyChanged?.Invoke(this, new(nameof(IsSelected))); } }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public FolderNode(string path, string? name = null)
     {
