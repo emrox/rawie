@@ -432,6 +432,13 @@ public sealed partial class MainWindow : Window
         // TextBox already consumed — typing "x" would reject the photo, Enter would open preview.
         if (_modalDepth > 0) return;
 
+        // Same problem with the folder tree: it handles Enter itself (open folder), and the photo
+        // actions below would then fire on the grid's selection too — Enter popping open the preview,
+        // or worse, Delete recycling a photo while the user is just walking the tree.
+        if (e.Key != VirtualKey.Tab &&
+            IsInside(Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(Content.XamlRoot) as DependencyObject, FolderTree))
+            return;
+
         switch (e.Key)
         {
             case VirtualKey.Enter when ThumbGrid.SelectedItem is PhotoItem sel:
