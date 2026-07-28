@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using MetadataExtractor.Formats.GeoTiff;
@@ -28,7 +29,10 @@ public sealed partial class MainWindow : Window
         ".mp4", ".mov", ".m4v", ".avi", ".mts"
     };
 
-    private readonly ObservableCollection<PhotoItem> _items = new();
+    // The grid's items are assigned as a whole new list per folder (see LoadFolder). Adding items one
+    // at a time to a *bound* collection fires a CollectionChanged per item; doing that for hundreds of
+    // items while the virtualizer is busy is what crashed Microsoft.UI.Xaml (stowed exception).
+    private IReadOnlyList<PhotoItem> _current = Array.Empty<PhotoItem>();
     public ObservableCollection<ExifRow> Exif { get; } = new();
 
     private bool _preview;
@@ -38,15 +42,81 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "Rawie";
-        ThumbGrid.ItemsSource = _items;
 
         // handledEventsToo: the GridView swallows Enter in grid mode, so a normal KeyDown never sees it.
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
 
+        ThumbLoader.Start();   // pump runs on the UI thread's context
         PopulateTreeRoots();
+        HookDeviceChanges();
 
-        var start = FindTestData();
-        if (start is not null) LoadFolder(start);
+        var args = Environment.GetCommandLineArgs();
+        var idx = Array.IndexOf(args, "--folder");
+        var start = idx >= 0 && idx + 1 < args.Length ? args[idx + 1] : FindTestData();
+        if (start is not null && Directory.Exists(start)) LoadFolder(start);
+    }
+
+    // --- dynamic device detection: refresh drive/camera roots on plug/unplug ---
+    private delegate nint SubclassProc(nint hWnd, uint msg, nint wParam, nint lParam, nuint id, nint data);
+    [DllImport("comctl32.dll", SetLastError = true)]
+    private static extern bool SetWindowSubclass(nint hWnd, SubclassProc cb, nuint id, nuint data);
+    [DllImport("comctl32.dll")]
+    private static extern nint DefSubclassProc(nint hWnd, uint msg, nint wParam, nint lParam);
+
+    private const uint WM_DEVICECHANGE = 0x0219;
+    private SubclassProc? _subclass;         // keep the delegate alive (GC would crash the pump)
+    private DispatcherTimer? _deviceDebounce;
+
+    private void HookDeviceChanges()
+    {
+        _deviceDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+        _deviceDebounce.Tick += (_, _) => { _deviceDebounce!.Stop(); RefreshRoots(); };
+
+        _subclass = OnWindowMessage;
+        var hwnd = WindowNative.GetWindowHandle(this);
+        var ok = SetWindowSubclass(hwnd, _subclass, 1, 0);
+        Diag.Log($"device hook installed: hwnd={hwnd:X}, ok={ok}");
+    }
+
+    private nint OnWindowMessage(nint hWnd, uint msg, nint wParam, nint lParam, nuint id, nint data)
+    {
+        // This runs for EVERY window message via native code — an exception escaping here corrupts
+        // the message pump. Never let one out.
+        try
+        {
+            if (msg == WM_DEVICECHANGE)
+            {
+                Diag.Log($"WM_DEVICECHANGE wParam={wParam:X}");
+                _deviceDebounce?.Stop();
+                _deviceDebounce?.Start();   // debounce the burst
+            }
+        }
+        catch (Exception e) { Diag.Log("wndproc: " + e.Message); }
+        return DefSubclassProc(hWnd, msg, wParam, lParam);
+    }
+
+    // Reconcile drive + camera roots against reality; leave Pictures and any expanded folders intact.
+    private void RefreshRoots()
+    {
+        try
+        {
+            // drop all camera/shell device roots (re-added fresh — reconnects get a valid ShellItem)
+            for (var i = Roots.Count - 1; i >= 0; i--)
+                if (Roots[i].Item is not null) Roots.RemoveAt(i);
+
+            // drives: remove gone, add new (USB sticks / card readers)
+            var current = DriveInfo.GetDrives().Where(d => d.IsReady)
+                .Select(d => d.RootDirectory.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            for (var i = Roots.Count - 1; i >= 0; i--)
+                if (Roots[i].IsDriveRoot && !current.Contains(Roots[i].Path)) Roots.RemoveAt(i);
+            var have = Roots.Where(r => r.IsDriveRoot).Select(r => r.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var d in DriveInfo.GetDrives().Where(x => x.IsReady))
+                if (!have.Contains(d.RootDirectory.FullName)) Roots.Add(NewDriveNode(d.RootDirectory.FullName, d.Name));
+
+            AddPortableDevices();
+            Diag.Log($"refresh roots -> {Roots.Count}");
+        }
+        catch (Exception e) { Diag.Log("refresh roots fail: " + e.Message); }
     }
 
     // --- left folder tree (bound mode; children fill lazily on expand) ---
@@ -59,7 +129,7 @@ public sealed partial class MainWindow : Window
             var pics = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
             if (Directory.Exists(pics)) Roots.Add(NewFolder(pics, "Pictures"));
             foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
-                Roots.Add(NewFolder(drive.RootDirectory.FullName, drive.Name));
+                Roots.Add(NewDriveNode(drive.RootDirectory.FullName, drive.Name));
             AddPortableDevices();
         }
         catch (Exception e) { Diag.Log("tree roots fail: " + e.Message); }
@@ -87,6 +157,13 @@ public sealed partial class MainWindow : Window
     {
         var fn = new FolderNode(path, name);
         if (HasSubdirs(path)) fn.Children.Add(new FolderNode(path, "…"));   // placeholder -> shows expander
+        return fn;
+    }
+
+    private static FolderNode NewDriveNode(string path, string name)
+    {
+        var fn = NewFolder(path, name);
+        fn.IsDriveRoot = true;
         return fn;
     }
 
@@ -156,49 +233,59 @@ public sealed partial class MainWindow : Window
     private void LoadShellFolder(ShellItem folder, string displayName)
     {
         if (_preview) ExitPreview();
-        _items.Clear();
+        ThumbLoader.Reset();
         PathText.Text = displayName + "  (camera)";
+
+        var list = new List<PhotoItem>();
         try
         {
             var sf = new ShellFolder(folder);
             foreach (var child in sf.EnumerateChildren(FolderItemFilter.NonFolders, HWND.NULL)
                          .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
-                if (MediaExts.Contains(Path.GetExtension(child.Name))) _items.Add(new PhotoItem(child));
+                if (MediaExts.Contains(Path.GetExtension(child.Name))) list.Add(new PhotoItem(child));
                 else child.Dispose();
             }
         }
         catch (Exception e) { Diag.Log("load shell folder fail: " + e.Message); }
 
-        StatusText.Text = $"{_items.Count} items";
-        Diag.Log($"loaded {_items.Count} shell items from '{displayName}'");
-        if (_items.Count > 0) ThumbGrid.SelectedIndex = 0;
+        SetItems(list);
+        Diag.Log($"loaded {list.Count} shell items from '{displayName}'");
     }
 
 
     private void LoadFolder(string path)
     {
         if (_preview) ExitPreview();   // a new folder always lands in the grid
-        _items.Clear();
+        ThumbLoader.Reset();           // abandon thumbnail work queued for the previous folder
         PathText.Text = path;
+
+        var list = new List<PhotoItem>();
         try
         {
             foreach (var f in Directory.EnumerateFiles(path)
                          .Where(f => MediaExts.Contains(Path.GetExtension(f)))
                          .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
-                _items.Add(new PhotoItem(f));
+                list.Add(new PhotoItem(f));
         }
         catch (Exception e) { Diag.Log("LoadFolder failed: " + e.Message); }
 
-        StatusText.Text = $"{_items.Count} items";
-        Diag.Log($"loaded {_items.Count} items from {path}");
-        if (_items.Count > 0) ThumbGrid.SelectedIndex = 0;
+        SetItems(list);
+        Diag.Log($"loaded {list.Count} items from {path}");
+    }
+
+    private void SetItems(List<PhotoItem> list)
+    {
+        _current = list;
+        ThumbGrid.ItemsSource = list;             // single assignment — no per-item CollectionChanged churn
+        StatusText.Text = $"{list.Count} items";
+        if (list.Count > 0) ThumbGrid.SelectedIndex = 0;
     }
 
     // --- thumbnails: load only realized (visible) cells ---
     private void OnContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
-        if (!args.InRecycleQueue && args.Item is PhotoItem p) _ = p.LoadThumbAsync();
+        if (!args.InRecycleQueue && args.Item is PhotoItem p) ThumbLoader.Enqueue(p);
     }
 
     // --- selection drives the info panel + (in preview mode) the big image ---
@@ -206,7 +293,7 @@ public sealed partial class MainWindow : Window
     {
         if (ThumbGrid.SelectedItem is not PhotoItem p) return;
         var token = ++_exifToken;
-        StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_items.Count}   {p.Name}";
+        StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_current.Count}   {p.Name}";
 
         if (p.IsShell)
         {
@@ -231,20 +318,9 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            if (p.IsShell)
-            {
-                var img = await p.LoadShellPreviewAsync(1600);
-                if (token != _exifToken) return;
-                PreviewImage.Source = img;
-                return;
-            }
-            var file = await StorageFile.GetFileFromPathAsync(p.Path);
-            using var t = await file.GetThumbnailAsync(ThumbnailMode.SingleItem, 1600, ThumbnailOptions.ResizeThumbnail);
-            if (token != _exifToken) return;
-            var bmp = new BitmapImage();
-            await bmp.SetSourceAsync(t);
-            if (token != _exifToken) return;
-            PreviewImage.Source = bmp;
+            var img = await p.LoadPreviewAsync(1600);   // cached, decoded off the XAML pipeline
+            if (token != _exifToken) return;            // selection moved on -> drop stale image
+            PreviewImage.Source = img;
         }
         catch (Exception e) { Diag.Log("preview fail: " + e.Message); }
     }
@@ -270,7 +346,7 @@ public sealed partial class MainWindow : Window
     private void Move(int delta)
     {
         var i = ThumbGrid.SelectedIndex + delta;
-        if (i >= 0 && i < _items.Count) ThumbGrid.SelectedIndex = i;
+        if (i >= 0 && i < _current.Count) ThumbGrid.SelectedIndex = i;
     }
 
     private void OnItemDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -281,6 +357,7 @@ public sealed partial class MainWindow : Window
     private void EnterPreview()
     {
         _preview = true;
+        ThumbLoader.Pause();   // big view has the stage: stop grinding out grid thumbnails
         ThumbGrid.Visibility = Visibility.Collapsed;
         PreviewPanel.Visibility = Visibility.Visible;
         PreviewPanel.Focus(FocusState.Programmatic);
@@ -290,6 +367,7 @@ public sealed partial class MainWindow : Window
     private void ExitPreview()
     {
         _preview = false;
+        ThumbLoader.Resume();   // back in the grid: carry on where we left off
         PreviewPanel.Visibility = Visibility.Collapsed;
         ThumbGrid.Visibility = Visibility.Visible;
         ThumbGrid.Focus(FocusState.Programmatic);

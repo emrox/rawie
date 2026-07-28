@@ -9,7 +9,9 @@ public partial class App : Application
     public App()
     {
         Diag.Log("App ctor");
-        UnhandledException += (_, e) => Diag.Log("UNHANDLED: " + e.Message + "\n" + e.Exception);
+        UnhandledException += (_, e) => Diag.Log("UNHANDLED (xaml): " + e.Message + "\n" + e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Diag.Log("UNHANDLED (domain): " + (e.ExceptionObject as Exception));
+        TaskScheduler.UnobservedTaskException += (_, e) => { Diag.Log("UNOBSERVED TASK: " + e.Exception); e.SetObserved(); };
         InitializeComponent();
     }
 

@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Vanara.PInvoke;
 using Vanara.Windows.Shell;
+using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
 using Windows.Storage.Streams;
@@ -37,6 +39,10 @@ public sealed class PhotoItem : INotifyPropertyChanged
     private ImageSource? _thumb;
     public ImageSource? Thumb { get => _thumb; private set { _thumb = value; Raise(); } }
 
+    // The loader generation this item belongs to. The pump drops items whose generation is stale,
+    // so switching folders abandons queued work instead of draining it.
+    public int Generation { get; } = ThumbLoader.Generation;
+
     private bool _started;
     public async Task LoadThumbAsync(uint size = 256)
     {
@@ -46,65 +52,125 @@ public sealed class PhotoItem : INotifyPropertyChanged
         {
             if (_shell is not null)
             {
-                var png = await Task.Run(() => ShellImagePng(_shell, size));
-                if (png is not null) Thumb = await ToBitmap(png);
-                else Diag.Log($"thumb empty (shell): {Name}");
+                using var h = await Task.Run(() => ShellGetHBitmap(_shell, size, Generation));   // MTP off UI thread
+                if (h is null || Generation != ThumbLoader.Generation) return;
+                Thumb = await HBitmapToImage(h);
+                return;
             }
-            else
+
+            // Cache hit: plain JPEG/PNG bytes -> never re-enters the RAW codec.
+            var key = ThumbCache.KeyFor(Path, size);
+            if (key is not null && await ThumbCache.TryReadAsync(key) is { } cached)
             {
-                var file = await StorageFile.GetFileFromPathAsync(Path);
-                using var t = await file.GetThumbnailAsync(ThumbnailMode.PicturesView, size, ThumbnailOptions.ResizeThumbnail);
-                if (t is not null && t.Size > 0)
-                {
-                    var bmp = new BitmapImage();
-                    await bmp.SetSourceAsync(t);
-                    Thumb = bmp;
-                }
+                if (Generation != ThumbLoader.Generation) return;
+                Thumb = await BytesToBitmap(cached);
+                return;
             }
+
+            // Miss: ask the shell (this is the slow, RAW-codec path), then cache the bytes.
+            var file = await StorageFile.GetFileFromPathAsync(Path);
+            if (Generation != ThumbLoader.Generation) return;
+            var t = await file.GetThumbnailAsync(ThumbnailMode.PicturesView, size, ThumbnailOptions.ResizeThumbnail);
+            if (t is null || t.Size == 0) return;
+
+            var bytes = new byte[t.Size];
+            await t.AsStreamForRead().ReadExactlyAsync(bytes);
+            if (key is not null) await ThumbCache.WriteAsync(key, bytes);
+            if (Generation != ThumbLoader.Generation) return;
+            Thumb = await BytesToBitmap(bytes);
         }
         catch (Exception e) { Diag.Log($"thumb fail: {Name}: {e.Message}"); }
+    }
+
+    // Large preview for the big view: same cache + off-XAML decode as thumbnails, bigger size.
+    // Cached under its own key (size is part of the key), so re-opening an image is instant and
+    // never re-reads the RAW.
+    public async Task<ImageSource?> LoadPreviewAsync(uint size = 1600)
+    {
+        if (_shell is not null) return await LoadShellPreviewAsync(size);
+        try
+        {
+            var key = ThumbCache.KeyFor(Path, size);
+            if (key is not null && await ThumbCache.TryReadAsync(key) is { } cached)
+                return await BytesToBitmap(cached);
+
+            var file = await StorageFile.GetFileFromPathAsync(Path);
+            var t = await file.GetThumbnailAsync(ThumbnailMode.SingleItem, size, ThumbnailOptions.ResizeThumbnail);
+            if (t is null || t.Size == 0) return null;
+
+            var bytes = new byte[t.Size];
+            await t.AsStreamForRead().ReadExactlyAsync(bytes);
+            if (key is not null) await ThumbCache.WriteAsync(key, bytes);
+            return await BytesToBitmap(bytes);
+        }
+        catch (Exception e) { Diag.Log($"preview fail: {Name}: {e.Message}"); return null; }
     }
 
     // Large preview for a camera item (same extraction at a bigger size).
     public async Task<ImageSource?> LoadShellPreviewAsync(uint size = 1600)
     {
         if (_shell is null) return null;
-        var png = await Task.Run(() => ShellImagePng(_shell, size));
-        return png is null ? null : await ToBitmap(png);
+        using var h = await Task.Run(() => ShellGetHBitmap(_shell, size, Generation));
+        return h is null ? null : await HBitmapToImage(h);
     }
 
-    private static async Task<ImageSource> ToBitmap(byte[] png)
+    // MUST run on the UI thread: System.Drawing/GDI+ is not safe across threads. Called only after
+    // an await, so we're back on the WinUI dispatcher.
+    private static async Task<ImageSource?> HBitmapToImage(Gdi32.SafeHBITMAP h)
+    {
+        using var bmp = System.Drawing.Image.FromHbitmap(h.DangerousGetHandle());
+        using var ms = new MemoryStream();
+        bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+        var ras = new InMemoryRandomAccessStream();
+        using (var dw = new DataWriter(ras)) { dw.WriteBytes(ms.ToArray()); await dw.StoreAsync(); dw.DetachStream(); }
+        ras.Seek(0);
+        return await ToWriteableBitmap(ras);
+    }
+
+    private static async Task<ImageSource?> BytesToBitmap(byte[] bytes)
     {
         var ras = new InMemoryRandomAccessStream();
-        using (var dw = new DataWriter(ras)) { dw.WriteBytes(png); await dw.StoreAsync(); dw.DetachStream(); }
+        using (var dw = new DataWriter(ras)) { dw.WriteBytes(bytes); await dw.StoreAsync(); dw.DetachStream(); }
         ras.Seek(0);
-        var bi = new BitmapImage();
-        await bi.SetSourceAsync(ras);
-        return bi;
+        return await ToWriteableBitmap(ras);
     }
 
-    // MTP serves one image resource at a time; serialize + GC/retry on ERROR_BUSY (0x800700AA).
+    // Decode a thumbnail/preview stream to a fully-formed WriteableBitmap. BitmapDecoder runs OUTSIDE
+    // the XAML image pipeline, so nothing is mid-decode inside XAML when a grid container recycles
+    // during a fast folder switch (BitmapImage.SetSourceAsync decodes inside XAML -> crashes on recycle).
+    private static async Task<ImageSource?> ToWriteableBitmap(IRandomAccessStream stream)
+    {
+        var decoder = await BitmapDecoder.CreateAsync(stream);
+        var pd = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
+            new BitmapTransform(), ExifOrientationMode.RespectExifOrientation, ColorManagementMode.DoNotColorManage);
+        var bytes = pd.DetachPixelData();
+        var wb = new WriteableBitmap((int)decoder.OrientedPixelWidth, (int)decoder.OrientedPixelHeight);
+        using (var s = wb.PixelBuffer.AsStream()) await s.WriteAsync(bytes, 0, bytes.Length);
+        return wb;
+    }
+
+    // Background only: the slow MTP GetImage. MTP serves one resource at a time -> serialize + GC/retry
+    // on ERROR_BUSY. No System.Drawing here. Returns the HBITMAP for the UI thread to convert.
     private static readonly SemaphoreSlim ShellGate = new(1, 1);
-    private static byte[]? ShellImagePng(ShellItem shell, uint size)
+    private static Gdi32.SafeHBITMAP? ShellGetHBitmap(ShellItem shell, uint size, int gen)
     {
         ShellGate.Wait();
         try
         {
+            if (gen != ThumbLoader.Generation) return null;   // superseded while queued -> skip the MTP work
             for (var attempt = 1; ; attempt++)
             {
                 try
                 {
-                    using var h = shell.GetImage(new SIZE((int)size, (int)size),
+                    var h = shell.GetImage(new SIZE((int)size, (int)size),
                         ShellItemGetImageOptions.ThumbnailOnly | ShellItemGetImageOptions.BiggerSizeOk);
-                    if (h is null || h.IsInvalid) return null;
-                    using var bmp = System.Drawing.Image.FromHbitmap(h.DangerousGetHandle());
-                    using var ms = new MemoryStream();
-                    bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                    return ms.ToArray();
+                    return h is null || h.IsInvalid ? null : h;
                 }
-                catch (Exception e) when (attempt < 5 && (uint)e.HResult == 0x800700AA)
+                // ERROR_BUSY: just wait and retry. NO forced GC here — running Vanara's COM finalizers
+                // on this background thread while COM is in use elsewhere raises E_UNEXPECTED (crash).
+                catch (Exception e) when (attempt < 4 && (uint)e.HResult == 0x800700AA)
                 {
-                    GC.Collect(); GC.WaitForPendingFinalizers(); Thread.Sleep(150 * attempt);
+                    Thread.Sleep(120 * attempt);
                 }
             }
         }
@@ -136,7 +202,8 @@ public sealed class FolderNode
 {
     public string Path { get; }
     public string Name { get; }
-    public ShellItem? Item { get; set; }
+    public ShellItem? Item { get; set; }          // set for camera/shell folders
+    public bool IsDriveRoot { get; set; }         // set for drive-letter roots (for device refresh)
     public ObservableCollection<FolderNode> Children { get; } = new();
     public bool Loaded { get; set; }
 
