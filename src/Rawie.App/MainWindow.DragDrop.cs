@@ -134,9 +134,16 @@ public sealed partial class MainWindow
                 : FileOps.Move(withCompanions, target, Hwnd);
 
             if (done)
+            {
                 StatusText.Text = $"{(copying ? "Copied" : "Moved")} {paths.Count} item"
                                 + $"{(paths.Count == 1 ? "" : "s")} to {target}";
-            // The folder watcher picks the change up and refreshes; nothing to do here.
+
+                // The watcher refreshes the folder we're viewing, but the destination is somewhere
+                // else — if a folder landed there, its tree node has to be brought up to date too.
+                RefreshTreeChildren(target);
+                foreach (var movedFrom in paths.Select(Path.GetDirectoryName).Distinct(StringComparer.OrdinalIgnoreCase))
+                    RefreshTreeChildren(movedFrom);
+            }
         }
         catch (Exception ex) { Diag.Log("drop: " + ex.Message); }
         finally { deferral.Complete(); }

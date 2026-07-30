@@ -193,6 +193,61 @@ public sealed partial class MainWindow
         catch (Exception e) { Diag.Log("expand fail: " + e.Message); }
     }
 
+    /// Bring a node's children back in line with disk, after folders were created, deleted, renamed
+    /// or moved. Existing child nodes are kept (so their expansion and loaded children survive) and
+    /// only the difference is applied.
+    ///
+    /// Nodes that were never expanded are skipped — they load fresh when opened anyway.
+    private void RefreshTreeChildren(string? folderPath)
+    {
+        if (folderPath is null) return;
+        var node = FindLoadedNode(folderPath);
+        if (node is null || !node.Loaded) return;
+
+        try
+        {
+            var onDisk = Directory.EnumerateDirectories(folderPath)
+                .Where(d => !IsHiddenDir(d))
+                .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            for (var i = node.Children.Count - 1; i >= 0; i--)
+                if (!onDisk.Any(d => SamePath(d, node.Children[i].Path)))
+                    node.Children.RemoveAt(i);
+
+            for (var i = 0; i < onDisk.Count; i++)
+                if (!node.Children.Any(c => SamePath(c.Path, onDisk[i])))
+                    node.Children.Insert(Math.Min(i, node.Children.Count), NewFolder(onDisk[i]));
+        }
+        catch (Exception e) { Diag.Log("tree refresh: " + e.Message); }
+    }
+
+    /// Walk to an existing node for `path`, without expanding or loading anything on the way.
+    private FolderNode? FindLoadedNode(string path)
+    {
+        path = path.TrimEnd('\\');
+        var root = Roots.Where(r => r.Item is null && !string.IsNullOrEmpty(r.Path)
+                                 && path.StartsWith(r.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(r => r.Path.Length)
+                        .FirstOrDefault();
+        if (root is null) return null;
+        if (SamePath(root.Path, path)) return root;
+
+        var node = root;
+        var walked = root.Path.TrimEnd('\\');
+        foreach (var segment in path[walked.Length..].Split('\\', StringSplitOptions.RemoveEmptyEntries))
+        {
+            walked += "\\" + segment;
+            var next = node.Children.FirstOrDefault(c => SamePath(c.Path, walked));
+            if (next is null) return null;      // that branch isn't open, nothing to refresh
+            node = next;
+        }
+        return node;
+    }
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(a.TrimEnd('\\'), b.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+
     /// Expand the tree down to `path` and select it, so the pane shows where we are.
     private void RevealInTree(string path)
     {

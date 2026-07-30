@@ -232,6 +232,7 @@ public sealed partial class MainWindow : Window
         {
             timer.Stop();
             if (_modalDepth > 0) return;                 // don't yank the view while a dialog is open
+            RefreshTreeChildren(_currentFolder);         // subfolders may have appeared or gone
             ReloadKeepingPosition(ThumbGrid.SelectedIndex);
         };
         return timer;

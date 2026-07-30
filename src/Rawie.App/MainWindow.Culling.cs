@@ -142,6 +142,7 @@ public sealed partial class MainWindow
             StatusText.Text = targets.Count == 1
                 ? $"{targets[0].Name} — moved to {dest}"
                 : $"{targets.Count} photos — moved to {dest}";
+            RefreshTreeChildren(dest);        // destination isn't watched — update its tree node
             ReloadKeepingPosition(index);
         }
     }
