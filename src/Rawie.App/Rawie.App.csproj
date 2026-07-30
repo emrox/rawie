@@ -14,11 +14,36 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Ship one language rather than ~40 sets of satellite resources. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <!-- The Windows App SDK bundles ONNX Runtime and DirectML (~39 MB) for its Windows AI APIs.
+       Rawie uses none of them, and a self-contained build runs fine without them — verified by
+       publishing, deleting them and launching. Delete this target if the app ever adopts a
+       Windows AI feature. -->
+  <Target Name="DropUnusedAiRuntimes" AfterTargets="Publish" Condition="'$(SelfContained)' == 'true'">
+    <ItemGroup>
+      <_UnusedAiRuntime Include="$(PublishDir)onnxruntime.dll" />
+      <_UnusedAiRuntime Include="$(PublishDir)DirectML.dll" />
+    </ItemGroup>
+    <Delete Files="@(_UnusedAiRuntime)" ContinueOnError="true" />
+  </Target>
 
   <ItemGroup>
     <!-- Also needed at runtime: the window icon is set from this file (see MainWindow.StyleTitleBar). -->
     <Content Include="..\..\assets\logo.ico" Link="logo.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- MSIX packaging. The app builds unpackaged (portable) by default; passing
+       -p:WindowsPackageType=MSIX produces an installer from the same project.
+       The manifest must only be present in that mode — an unpackaged build refuses to configure
+       with one. -->
+  <ItemGroup Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <AppxManifest Include="Package.appxmanifest">
+      <SubType>Designer</SubType>
+    </AppxManifest>
+    <Content Include="Assets\*.png" />
   </ItemGroup>
 
   <ItemGroup>
