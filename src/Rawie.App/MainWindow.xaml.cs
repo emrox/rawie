@@ -89,8 +89,18 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception e) { Diag.Log("LoadFolder failed: " + e.Message); }
 
+        // Ratings must be known for every item, not just the visible ones, or filtering and sorting
+        // by rating would act on whatever the thumbnail pump happened to have reached. Cheap: for
+        // most photos it's a single File.Exists miss.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        HashSet<string>? sidecars = null;
+        try { sidecars = Directory.EnumerateFiles(path, "*.xmp").ToHashSet(StringComparer.OrdinalIgnoreCase); }
+        catch (Exception ex) { Diag.Log("sidecar scan: " + ex.Message); }
+        foreach (var item in list) item.LoadRating(sidecars);
+        sw.Stop();
+
         SetItems(list);
-        Diag.Log($"loaded {list.Count} items from {path}");
+        Diag.Log($"loaded {list.Count} items from {path} (ratings {sw.ElapsedMilliseconds}ms)");
 
         // Remember where we were, so a blank "start folder" setting reopens here next time.
         if (!string.Equals(_settings.LastFolder, path, StringComparison.OrdinalIgnoreCase))
@@ -100,13 +110,57 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// Everything in the folder; the grid shows a filtered/sorted view of this (see ApplyView).
+    private List<PhotoItem> _all = new();
+
     private void SetItems(List<PhotoItem> list)
     {
+        _all = list;
+        ApplyView(selectFirst: true);
+    }
+
+    /// Rebuild the grid from _all using the current filter and sort.
+    /// Folders always show — they have no rating, and hiding them would break navigation.
+    private void ApplyView(bool selectFirst)
+    {
+        var minStars = (FilterBox?.SelectedItem as FrameworkElement)?.Tag as string ?? "all";
+        var sortBy = (SortBox?.SelectedItem as FrameworkElement)?.Tag as string ?? "name";
+
+        IEnumerable<PhotoItem> view = _all.Where(i => i.IsFolder || Passes(i, minStars));
+
+        view = sortBy == "rating"
+            // best first; rejects sink below unrated, name breaks ties
+            ? view.OrderByDescending(i => i.IsFolder)
+                  .ThenByDescending(i => i.Rating == Xmp.Rejected ? -1 : i.Rating)
+                  .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+            : view.OrderByDescending(i => i.IsFolder)
+                  .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase);
+
+        var list = view.ToList();
         _current = list;
-        ThumbGrid.ItemsSource = list;             // single assignment — no per-item CollectionChanged churn
+        ThumbGrid.ItemsSource = list;   // single assignment — no per-item CollectionChanged churn
+
         var folders = list.Count(i => i.IsFolder);
-        StatusText.Text = folders > 0 ? $"{folders} folders, {list.Count - folders} files" : $"{list.Count} items";
-        if (list.Count > 0) ThumbGrid.SelectedIndex = 0;
+        var hidden = _all.Count - list.Count;
+        StatusText.Text = $"{folders} folders, {list.Count - folders} files"
+                        + (hidden > 0 ? $"   ({hidden} hidden by filter)" : "");
+
+        if (selectFirst && list.Count > 0) ThumbGrid.SelectedIndex = 0;
+    }
+
+    private static bool Passes(PhotoItem item, string filter) => filter switch
+    {
+        "all" => true,
+        "rej" => item.Rating == Xmp.Rejected,
+        "none" => item.Rating == 0,
+        _ => int.TryParse(filter, out var min) && item.Rating >= min,
+    };
+
+    // Deliberately NOT called when a rating changes: having a photo vanish from under the cursor
+    // mid-cull is disorienting. The view refreshes when the filter/sort or folder changes.
+    private void OnViewOptionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_all.Count > 0) ApplyView(selectFirst: true);
     }
 
     // --- shared window helpers (focus, modal dialogs, HWND) ---
@@ -169,15 +223,18 @@ public sealed partial class MainWindow : Window
     // --- selection drives the info panel + (in preview mode) the big image ---
     private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ThumbGrid.SelectedItem is not PhotoItem p) return;
+        // Drive the template's selection border (see PhotoItem.SelectionBrush) for every item that
+        // joined or left the selection — with multi-select this is no longer a single item.
+        foreach (var removed in e.RemovedItems.OfType<PhotoItem>()) removed.IsSelected = false;
+        foreach (var added in e.AddedItems.OfType<PhotoItem>()) added.IsSelected = true;
 
-        // Drive the template's selection border (see PhotoItem.SelectionBrush).
-        if (_selectedPhoto is { } prev && !ReferenceEquals(prev, p)) prev.IsSelected = false;
-        _selectedPhoto = p;
-        p.IsSelected = true;
+        if (ThumbGrid.SelectedItem is not PhotoItem p) { UpdateRatingStars(null); return; }
 
         var token = ++_exifToken;
-        StatusText.Text = $"{ThumbGrid.SelectedIndex + 1} / {_current.Count}   {p.Name}";
+        var count = ThumbGrid.SelectedItems.Count;
+        StatusText.Text = count > 1
+            ? $"{count} selected"
+            : $"{ThumbGrid.SelectedIndex + 1} / {_current.Count}   {p.Name}";
         ShowPreviewRating(p);
         UpdateRatingStars(p);
 

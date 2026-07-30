@@ -114,7 +114,6 @@ static class ThumbLoader
             {
                 if (_pause is { } p) await p.Task;        // preview open -> hold
                 if (item.Generation != Generation) continue;   // stale folder -> skip cheaply
-                item.LoadRating();
                 await item.LoadThumbAsync();
             }
             catch (Exception e) { Diag.Log("thumb pump: " + e.Message); }

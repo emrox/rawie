@@ -97,10 +97,13 @@ public sealed class PhotoItem : INotifyPropertyChanged
 
     public Brush SelectionBrush => IsSelected ? Accent : Clear;
 
-    /// Read the stored rating (cheap: usually just a File.Exists miss).
-    public void LoadRating()
+    /// Read the stored rating. Pass the set of sidecars present in the folder (one directory listing)
+    /// to skip a per-file existence check — that alone took ~230ms on an 875-photo folder.
+    public void LoadRating(HashSet<string>? sidecarsInFolder = null)
     {
-        if (!IsShell && !IsFolder) Rating = Xmp.Read(Path);
+        if (IsShell || IsFolder) return;
+        if (sidecarsInFolder is not null && !sidecarsInFolder.Contains(Xmp.SidecarFor(Path))) { Rating = 0; return; }
+        Rating = Xmp.Read(Path);
     }
 
     // The loader generation this item belongs to. The pump drops items whose generation is stale,

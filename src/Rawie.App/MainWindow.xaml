@@ -34,14 +34,32 @@
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Padding="12">
                 <Button Content="Open folder…" Click="OnPickFolder" />
                 <Button Content="Settings…" Click="OnOpenSettings" />
+
+                <ComboBox x:Name="FilterBox" MinWidth="130" SelectionChanged="OnViewOptionChanged"
+                          ToolTipService.ToolTip="Show only photos with this rating">
+                    <ComboBoxItem Content="All ratings" Tag="all" IsSelected="True" />
+                    <ComboBoxItem Content="★ and up" Tag="1" />
+                    <ComboBoxItem Content="★★ and up" Tag="2" />
+                    <ComboBoxItem Content="★★★ and up" Tag="3" />
+                    <ComboBoxItem Content="★★★★ and up" Tag="4" />
+                    <ComboBoxItem Content="★★★★★" Tag="5" />
+                    <ComboBoxItem Content="Rejected" Tag="rej" />
+                    <ComboBoxItem Content="Unrated" Tag="none" />
+                </ComboBox>
+
+                <ComboBox x:Name="SortBox" MinWidth="120" SelectionChanged="OnViewOptionChanged"
+                          ToolTipService.ToolTip="Sort order">
+                    <ComboBoxItem Content="Sort: name" Tag="name" IsSelected="True" />
+                    <ComboBoxItem Content="Sort: rating" Tag="rating" />
+                </ComboBox>
+
                 <TextBlock x:Name="PathText" Text="(no folder)" VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis" />
             </StackPanel>
 
             <Grid Grid.Row="1">
                 <GridView x:Name="ThumbGrid" Padding="8"
-                          SelectionMode="Single"
-                          SingleSelectionFollowsFocus="True"
+                          SelectionMode="Extended"
                           UseSystemFocusVisuals="False"
                           SelectionChanged="OnSelectionChanged"
                           DoubleTapped="OnItemDoubleTapped"

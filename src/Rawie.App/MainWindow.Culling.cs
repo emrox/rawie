@@ -66,17 +66,33 @@ public sealed partial class MainWindow
 
     private void DeleteSelected()
     {
-        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "deleted")) return;
-        var index = ThumbGrid.SelectedIndex;
-        if (FileOps.Recycle(WithCompanions(p.Path), Hwnd))
+        var targets = SelectedPhotos();
+        if (targets.Count == 0)
         {
-            StatusText.Text = $"{p.Name} — moved to Recycle Bin";
+            if (ThumbGrid.SelectedItem is PhotoItem p) Rateable(p, "deleted");
+            return;
+        }
+
+        var index = ThumbGrid.SelectedIndex;
+        // One call for the whole batch: a single confirmation, a single progress dialog, and a
+        // single undo entry in Explorer.
+        var paths = targets.SelectMany(t => WithCompanions(t.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (FileOps.Recycle(paths, Hwnd))
+        {
+            StatusText.Text = targets.Count == 1
+                ? $"{targets[0].Name} — moved to Recycle Bin"
+                : $"{targets.Count} photos — moved to Recycle Bin";
             ReloadKeepingPosition(index);
         }
     }
 
     private async void RenameSelected()
     {
+        if (ThumbGrid.SelectedItems.Count > 1)
+        {
+            StatusText.Text = "Select a single photo to rename";   // batch rename would need a pattern
+            return;
+        }
         if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "renamed")) return;
         var index = ThumbGrid.SelectedIndex;
 
@@ -108,14 +124,24 @@ public sealed partial class MainWindow
 
     private async void MoveSelected()
     {
-        if (ThumbGrid.SelectedItem is not PhotoItem p || !Rateable(p, "moved")) return;
+        var targets = SelectedPhotos();
+        if (targets.Count == 0)
+        {
+            if (ThumbGrid.SelectedItem is PhotoItem p) Rateable(p, "moved");
+            return;
+        }
+
         var index = ThumbGrid.SelectedIndex;
         var dest = await PickFolderAsync();
-        if (dest is null || string.Equals(dest, Path.GetDirectoryName(p.Path), StringComparison.OrdinalIgnoreCase)) return;
+        if (dest is null) return;
+        if (string.Equals(dest, Path.GetDirectoryName(targets[0].Path), StringComparison.OrdinalIgnoreCase)) return;
 
-        if (FileOps.Move(WithCompanions(p.Path), dest, Hwnd))
+        var paths = targets.SelectMany(t => WithCompanions(t.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (FileOps.Move(paths, dest, Hwnd))
         {
-            StatusText.Text = $"{p.Name} — moved to {dest}";
+            StatusText.Text = targets.Count == 1
+                ? $"{targets[0].Name} — moved to {dest}"
+                : $"{targets.Count} photos — moved to {dest}";
             ReloadKeepingPosition(index);
         }
     }
@@ -144,31 +170,46 @@ public sealed partial class MainWindow
         else RestoreListFocus();   // keep arrow-key navigation alive after a file operation
     }
 
-    /// Write a rating to the sidecar and reflect it in the UI.
+    /// Photos in the current selection that can actually be rated / operated on.
+    private List<PhotoItem> SelectedPhotos() =>
+        ThumbGrid.SelectedItems.OfType<PhotoItem>().Where(i => !i.IsFolder && !i.IsShell).ToList();
+
+    /// Write a rating to the sidecar(s) and reflect it in the UI. Applies to the whole selection.
     private void SetRating(int rating)
     {
-        if (ThumbGrid.SelectedItem is not PhotoItem p) return;
-        if (p.IsFolder || p.IsShell)
+        var targets = SelectedPhotos();
+        if (targets.Count == 0)
         {
-            StatusText.Text = p.IsShell ? "Rating needs the file on disk — import it first" : "Folders can't be rated";
+            if (ThumbGrid.SelectedItem is PhotoItem { IsShell: true })
+                StatusText.Text = "Rating needs the file on disk — import it first";
+            else if (ThumbGrid.SelectedItem is PhotoItem { IsFolder: true })
+                StatusText.Text = "Folders can't be rated";
             return;
         }
-        if (!Xmp.Write(p.Path, rating)) { StatusText.Text = "Couldn't write rating (file read-only?)"; return; }
 
-        // A RAW+JPEG pair shares one sidecar, so update every item pointing at it.
-        var side = Xmp.SidecarFor(p.Path);
-        foreach (var it in _current)
-            if (!it.IsFolder && !it.IsShell && string.Equals(Xmp.SidecarFor(it.Path), side, StringComparison.OrdinalIgnoreCase))
-                it.Rating = rating;
-
-        ShowPreviewRating(p);
-        UpdateRatingStars(p);
-        StatusText.Text = rating switch
+        var failed = 0;
+        foreach (var p in targets)
         {
-            Xmp.Rejected => $"{p.Name} — rejected",
-            0 => $"{p.Name} — rating cleared",
-            _ => $"{p.Name} — {rating} star{(rating == 1 ? "" : "s")}",
+            if (!Xmp.Write(p.Path, rating)) { failed++; continue; }
+
+            // A RAW+JPEG pair shares one sidecar, so update every item pointing at it.
+            var side = Xmp.SidecarFor(p.Path);
+            foreach (var it in _current)
+                if (!it.IsFolder && !it.IsShell &&
+                    string.Equals(Xmp.SidecarFor(it.Path), side, StringComparison.OrdinalIgnoreCase))
+                    it.Rating = rating;
+        }
+
+        if (ThumbGrid.SelectedItem is PhotoItem shown) { ShowPreviewRating(shown); UpdateRatingStars(shown); }
+
+        var what = rating switch
+        {
+            Xmp.Rejected => "rejected",
+            0 => "rating cleared",
+            _ => $"{rating} star{(rating == 1 ? "" : "s")}",
         };
+        StatusText.Text = targets.Count == 1 ? $"{targets[0].Name} — {what}" : $"{targets.Count} photos — {what}"
+                        + (failed > 0 ? $" ({failed} failed)" : "");
     }
 
 }
