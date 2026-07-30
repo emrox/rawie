@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Directory = System.IO.Directory;
 
 namespace Rawie.App;
@@ -38,6 +39,13 @@ public sealed partial class MainWindow
         var browse = new Button { Content = "Browse…" };
 
         var patternBox = new TextBox { MinWidth = 380, Text = _settings.ImportPattern ?? ImportPattern.Default };
+
+        var conflictBox = new ComboBox { MinWidth = 300 };
+        conflictBox.Items.Add("Keep both — import as name_001");
+        conflictBox.Items.Add("Skip — leave the existing file");
+        conflictBox.Items.Add("Overwrite — replace the existing file");
+        conflictBox.SelectedIndex = Enum.TryParse<ImportConflict>(_settings.ImportConflict, out var savedConflict)
+            ? (int)savedConflict : (int)ImportConflict.KeepBoth;
 
         var status = new TextBlock { Text = sourceBox.Items.Count == 0 ? "Attach a camera or insert a card." : "Scanning…" };
         var previewList = new TextBlock
@@ -91,18 +99,27 @@ public sealed partial class MainWindow
             if (picked is not null) destBox.Text = picked;
         };
 
-        // Asking "really stop?" can't use a second ContentDialog (WinUI allows only one at a time),
-        // so the confirmation lives inline in this one.
-        var stopButton = new Button { Content = "Stop import" };
-        var keepButton = new Button { Content = "Keep importing" };
-        var confirmStop = new StackPanel
+        // "Really stop?" can't be a second ContentDialog — WinUI allows only one at a time. A Flyout
+        // with Full placement gives the same effect: a popup centred over everything, so it can't end
+        // up scrolled out of sight the way an inline panel did once this dialog grew.
+        var stopButton = new Button { Content = "Stop import" }.AsDanger();
+        var keepButton = new Button { Content = "Keep importing" }.AsPrimary();
+        var confirmFlyout = new Flyout
         {
-            Spacing = 8,
-            Visibility = Visibility.Collapsed,
-            Children =
+            Content = new StackPanel
             {
-                new TextBlock { Text = "An import is running. Stop it?", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold },
-                Row(stopButton, keepButton),
+                Spacing = 12,
+                MaxWidth = 300,          // hug the content instead of stretching
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "An import is running. Stop it?",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    Row(stopButton, keepButton),
+                },
             },
         };
 
@@ -123,11 +140,34 @@ public sealed partial class MainWindow
             MaxWidth = 620,
             Foreground = Secondary(),
         });
+        var conflictHint = new TextBlock
+        {
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 620,
+            Foreground = Secondary(),
+        };
+        void UpdateConflictHint() => conflictHint.Text = (ImportConflict)Math.Max(0, conflictBox.SelectedIndex) switch
+        {
+            ImportConflict.Skip =>
+                "Existing files are never touched. Photos already imported are skipped too.",
+            ImportConflict.Overwrite =>
+                "A photo whose name is taken replaces the file that's there. "
+                + "Photos already imported unchanged are skipped, so nothing is rewritten needlessly.",
+            _ =>
+                "A different photo with the same name is imported as name_001, so nothing is lost. "
+                + "Photos already imported are skipped.",
+        };
+        conflictBox.SelectionChanged += (_, _) => UpdateConflictHint();
+        UpdateConflictHint();
+
+        panel.Children.Add(Label("If a file already exists"));
+        panel.Children.Add(conflictBox);
+        panel.Children.Add(conflictHint);
         panel.Children.Add(Label("Preview"));
         panel.Children.Add(previewScroll);
         panel.Children.Add(bar);
         panel.Children.Add(status);
-        panel.Children.Add(confirmStop);
 
         var dlg = new ContentDialog
         {
@@ -148,6 +188,7 @@ public sealed partial class MainWindow
         {
             _settings.ImportFolder = destBox.Text.Trim();
             _settings.ImportPattern = patternBox.Text.Trim();
+            _settings.ImportConflict = ((ImportConflict)Math.Max(0, conflictBox.SelectedIndex)).ToString();
             _settings.Save();
         }
 
@@ -157,16 +198,17 @@ public sealed partial class MainWindow
             SaveImportSettings();                     // remember the pattern even when just closing
             if (!importing) return;
             args.Cancel = true;                       // hold the dialog open and ask
-            confirmStop.Visibility = Visibility.Visible;
+            // Anchored, not Full: Full stretches the flyout across the whole window.
+            confirmFlyout.ShowAt(status, new FlyoutShowOptions { Placement = FlyoutPlacementMode.Top });
         };
 
         stopButton.Click += (_, _) =>
         {
             _importCts?.Cancel();
-            confirmStop.Visibility = Visibility.Collapsed;
+            confirmFlyout.Hide();
             dlg.Hide();
         };
-        keepButton.Click += (_, _) => confirmStop.Visibility = Visibility.Collapsed;
+        keepButton.Click += (_, _) => confirmFlyout.Hide();
 
         // Keep the dialog open while copying so progress stays visible.
         // Note: no deferral here. Holding one keeps the dialog "busy" for the whole import, and the
@@ -206,6 +248,7 @@ public sealed partial class MainWindow
             {
                 var outcome = await ImportEngine.RunAsync(sourceBox.SelectedItem as ImportSource, candidates,
                                                           destination, patternBox.Text.Trim(),
+                                                          (ImportConflict)Math.Max(0, conflictBox.SelectedIndex),
                                                           progress, _importCts.Token);
 
                 var summary = $"Imported {outcome.Copied}, skipped {outcome.Duplicates} already there"

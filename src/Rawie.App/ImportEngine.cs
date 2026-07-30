@@ -20,6 +20,18 @@ public sealed record ImportCandidate(string Name, string? FilePath, ShellItem? I
 
 public sealed record ImportProgress(int Done, int Total, string Current);
 
+/// What to do when the pattern resolves to a path that is already taken by a *different* file.
+/// A byte-identical file is always skipped — re-importing a card should never duplicate work.
+public enum ImportConflict
+{
+    /// Import it alongside, as name_001 — nothing is ever lost. Default.
+    KeepBoth,
+    /// Leave the existing file alone and move on.
+    Skip,
+    /// Replace the existing file with the incoming one.
+    Overwrite,
+}
+
 public sealed record ImportOutcome(
     int Copied, int Duplicates, int Failed, long Bytes, TimeSpan Elapsed,
     int Processed, int Total, bool Interrupted)
@@ -122,7 +134,11 @@ public static class ImportEngine
             if (candidate.FilePath is { } path)
                 return ImportPattern.Resolve(pattern, ImportPattern.ReadTokens(path));
 
-            // On-camera: we only know the file name until it's transferred.
+            // On-camera: ask the device for its metadata so the preview shows the real capture date.
+            if (candidate.Item is { } onDevice && TokensFromDevice(onDevice) is { } deviceTokens)
+                return ImportPattern.Resolve(pattern, deviceTokens);
+
+            // No metadata from the device — all we know is the file name.
             var tokens = new ImportTokens(DateTime.Now, "", "",
                 Path.GetExtension(candidate.Name).TrimStart('.'),
                 Path.GetFileNameWithoutExtension(candidate.Name));
@@ -130,6 +146,44 @@ public static class ImportEngine
         }
         catch (Exception e) { Diag.Log("preview: " + e.Message); return candidate.Name; }
     }
+
+    /// Capture date and camera taken from the device's own metadata, without transferring the file.
+    /// MTP exposes these through the shell, which is what lets "Skip" decide before pulling anything
+    /// across a slow connection. Returns null when the device doesn't report a date.
+    private static ImportTokens? TokensFromDevice(ShellItem item)
+    {
+        try
+        {
+            var props = item.Properties;
+
+            DateTime? when = AsDate(props["System.Photo.DateTaken"]) ?? AsDate(props["System.ItemDate"]);
+            if (when is null) return null;
+
+            var model = props["System.Photo.CameraModel"] as string ?? "";
+            var make = props["System.Photo.CameraManufacturer"] as string ?? "";
+            var name = item.Name ?? "";
+
+            return new ImportTokens(when.Value, make, model,
+                                    Path.GetExtension(name).TrimStart('.'),
+                                    Path.GetFileNameWithoutExtension(name));
+        }
+        catch (Exception e) { Diag.Log($"device metadata {item.Name}: {e.Message}"); return null; }
+    }
+
+    private static DateTime? AsDate(object? value) => value switch
+    {
+        DateTime d => d.Kind == DateTimeKind.Utc ? d.ToLocalTime() : d,
+        // The shell hands back dates from MTP devices as raw FILETIME structs, not DateTime —
+        // missing this made every camera file look like it had no capture date.
+        System.Runtime.InteropServices.ComTypes.FILETIME ft =>
+            DateTime.FromFileTime(((long)ft.dwHighDateTime << 32) | (uint)ft.dwLowDateTime),
+        null => null,
+        _ => DateTime.TryParse(value.ToString(), out var parsed) ? parsed : null,
+    };
+
+    /// True when the pattern needs camera make/model, which many devices don't report over MTP.
+    private static bool NeedsCameraName(string pattern) =>
+        pattern.Contains("{model}") || pattern.Contains("{camera}") || pattern.Contains("{make}");
 
     /// Is the card still in the reader / the camera still attached?
     /// Checked only after a failure — MTP fails transiently under load, so a failure on its own says
@@ -154,7 +208,7 @@ public static class ImportEngine
 
     public static async Task<ImportOutcome> RunAsync(
         ImportSource? source, IReadOnlyList<ImportCandidate> items, string destinationRoot, string pattern,
-        IProgress<ImportProgress>? progress, CancellationToken ct)
+        ImportConflict conflict, IProgress<ImportProgress>? progress, CancellationToken ct)
     {
         int copied = 0, duplicates = 0, failed = 0, processed = 0;
         long bytes = 0;
@@ -170,7 +224,7 @@ public static class ImportEngine
             var ok = false;
             try
             {
-                var result = await Task.Run(() => ImportOne(item, destinationRoot, pattern, ct), ct);
+                var result = await Task.Run(() => ImportOne(item, destinationRoot, pattern, conflict, ct), ct);
                 switch (result.status)
                 {
                     case "copied": copied++; bytes += result.bytes; ok = true; break;
@@ -199,10 +253,22 @@ public static class ImportEngine
     }
 
     private static (string status, long bytes) ImportOne(
-        ImportCandidate item, string destinationRoot, string pattern, CancellationToken ct)
+        ImportCandidate item, string destinationRoot, string pattern, ImportConflict conflict, CancellationToken ct)
     {
         // Camera files must be pulled local before their metadata can be read, so stage first and
         // move into place afterwards; card files are read where they are.
+        // "Skip" can decide from the device's own metadata — without this, every file was pulled
+        // across MTP and then thrown away, so skipping saved no time at all.
+        if (item.FilePath is null && conflict == ImportConflict.Skip &&
+            TokensFromDevice(item.Item!) is { } deviceTokens &&
+            // Only trust the device's metadata if it covers everything the pattern asks for — with a
+            // missing camera name the path would be wrong, and a wrong path must not decide a skip.
+            (!NeedsCameraName(pattern) || deviceTokens.Model.Length > 0 || deviceTokens.Make.Length > 0))
+        {
+            var expected = Path.Combine(destinationRoot, ImportPattern.Resolve(pattern, deviceTokens));
+            if (File.Exists(expected)) return ("duplicate", 0);
+        }
+
         string localSource;
         string? staged = null;
         if (item.FilePath is { } path)
@@ -222,15 +288,33 @@ public static class ImportEngine
             var relative = ImportPattern.Resolve(pattern, tokens);
             var destination = Path.Combine(destinationRoot, relative);
             var sourceHash = HashFile(localSource);
+            var replacing = false;
 
-            for (var seq = 1; File.Exists(destination); seq++)
+            if (File.Exists(destination))
             {
                 if (HashFile(destination) == sourceHash) return ("duplicate", 0);   // already imported
-                destination = Path.Combine(destinationRoot, ImportPattern.WithSequence(relative, seq));
+
+                switch (conflict)
+                {
+                    case ImportConflict.Skip:
+                        return ("duplicate", 0);                                     // leave theirs alone
+
+                    case ImportConflict.Overwrite:
+                        replacing = true;
+                        break;
+
+                    default:   // KeepBoth — walk to a free name, still skipping anything identical
+                        for (var seq = 1; File.Exists(destination); seq++)
+                        {
+                            if (HashFile(destination) == sourceHash) return ("duplicate", 0);
+                            destination = Path.Combine(destinationRoot, ImportPattern.WithSequence(relative, seq));
+                        }
+                        break;
+                }
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(localSource, destination);
+            File.Copy(localSource, destination, overwrite: replacing);
 
             if (HashFile(destination) != sourceHash)   // verify every copy
             {

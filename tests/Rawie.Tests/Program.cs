@@ -124,7 +124,7 @@ var cardSource = new ImportSource("Test card", Path.Combine(dir, "card"), null);
 var found = ImportEngine.Scan(cardSource, CancellationToken.None);
 Check(found.Count == 2, $"scan finds only media files (got {found.Count})");
 
-var first = await ImportEngine.RunAsync(cardSource, found, vault, @"{name}.{ext}", null, CancellationToken.None);
+var first = await ImportEngine.RunAsync(cardSource, found, vault, @"{name}.{ext}", ImportConflict.KeepBoth, null, CancellationToken.None);
 Check(first.Copied == 2 && first.Failed == 0, $"copies both files (copied {first.Copied}, failed {first.Failed})");
 Check(File.Exists(Path.Combine(vault, "SHOT1.NEF")), "destination path comes from the pattern");
 Check(File.ReadAllText(Path.Combine(vault, "SHOT1.NEF")) == "raw one", "content matches after verified copy");
@@ -132,16 +132,48 @@ Check(File.ReadAllText(Path.Combine(vault, "SHOT1.NEF")) == "raw one", "content 
 Check(Directory.GetFiles(vault).Any(f => Path.GetFileName(f) == "SHOT1.NEF"),
       "imported file keeps the original extension case (SHOT1.NEF, not .nef)");
 
-var second = await ImportEngine.RunAsync(cardSource, found, vault, @"{name}.{ext}", null, CancellationToken.None);
+var second = await ImportEngine.RunAsync(cardSource, found, vault, @"{name}.{ext}", ImportConflict.KeepBoth, null, CancellationToken.None);
 Check(second.Copied == 0 && second.Duplicates == 2, $"re-import skips duplicates (copied {second.Copied}, dup {second.Duplicates})");
 
 // Same destination name, different content -> kept as a separate file rather than overwritten.
 File.WriteAllText(Path.Combine(card, "SHOT1.NEF"), "raw one CHANGED");
 var third = await ImportEngine.RunAsync(cardSource,
     ImportEngine.Scan(cardSource, CancellationToken.None).Where(c => c.Name.EndsWith(".NEF")).ToList(),
-    vault, @"{name}.{ext}", null, CancellationToken.None);
+    vault, @"{name}.{ext}", ImportConflict.KeepBoth, null, CancellationToken.None);
 Check(third.Copied == 1, "a different file with the same name is still imported");
 Check(File.Exists(Path.Combine(vault, "SHOT1_001.nef")), "collision gets a sequence suffix, nothing overwritten");
+
+Console.WriteLine("conflict policy (same name, different content):");
+var conflictCard = Path.Combine(dir, "conflict");
+var conflictVault = Path.Combine(dir, "conflict_vault");
+Directory.CreateDirectory(conflictCard);
+if (Directory.Exists(conflictVault)) Directory.Delete(conflictVault, true);
+var conflictSource = new ImportSource("Conflict card", conflictCard, null);
+
+async Task<ImportOutcome> ImportOnce(string content, ImportConflict policy)
+{
+    File.WriteAllText(Path.Combine(conflictCard, "CLASH.NEF"), content);
+    return await ImportEngine.RunAsync(conflictSource, ImportEngine.Scan(conflictSource, CancellationToken.None),
+                                       conflictVault, @"{name}.{ext}", policy, null, CancellationToken.None);
+}
+
+await ImportOnce("original", ImportConflict.KeepBoth);
+Check(File.ReadAllText(Path.Combine(conflictVault, "CLASH.NEF")) == "original", "first import lands");
+
+var again = await ImportOnce("original", ImportConflict.Overwrite);
+Check(again.Duplicates == 1 && again.Copied == 0, "identical file is skipped even when overwriting");
+
+await ImportOnce("changed", ImportConflict.Skip);
+Check(File.ReadAllText(Path.Combine(conflictVault, "CLASH.NEF")) == "original",
+      "Skip leaves the existing file untouched");
+Check(!File.Exists(Path.Combine(conflictVault, "CLASH_001.NEF")), "Skip doesn't add a copy either");
+
+await ImportOnce("changed", ImportConflict.Overwrite);
+Check(File.ReadAllText(Path.Combine(conflictVault, "CLASH.NEF")) == "changed", "Overwrite replaces the file");
+
+await ImportOnce("third version", ImportConflict.KeepBoth);
+Check(File.ReadAllText(Path.Combine(conflictVault, "CLASH.NEF")) == "changed", "KeepBoth preserves the original");
+Check(File.Exists(Path.Combine(conflictVault, "CLASH_001.NEF")), "KeepBoth adds the newcomer alongside");
 
 // Source vanishing mid-import (card pulled / camera unplugged) must be reported honestly.
 Console.WriteLine("interrupted import:");
@@ -157,7 +189,7 @@ for (var i = 0; i < 10; i++)
 var goneSource = new ImportSource("Pulled card", gone, null);
 Directory.Delete(gone, true);   // simulate the card being pulled before anything is copied
 
-var lost = await ImportEngine.RunAsync(goneSource, goneFiles, vault, @"{name}.{ext}", null, CancellationToken.None);
+var lost = await ImportEngine.RunAsync(goneSource, goneFiles, vault, @"{name}.{ext}", ImportConflict.KeepBoth, null, CancellationToken.None);
 Check(lost.Interrupted, "unavailable source is flagged as interrupted");
 Check(lost.Processed < lost.Total, $"stops early instead of marching to the end ({lost.Processed}/{lost.Total})");
 Check(lost.Copied == 0, "reports nothing copied rather than claiming success");
@@ -172,7 +204,7 @@ var ghosts = Enumerable.Range(0, 6)
     .Select(i => new ImportCandidate($"MISSING{i}.NEF", Path.Combine(flaky, $"MISSING{i}.NEF"), null))
     .ToList();   // candidates that will all fail, but the folder itself still exists
 
-var flakyRun = await ImportEngine.RunAsync(flakySource, ghosts, vault, @"{name}.{ext}", null, CancellationToken.None);
+var flakyRun = await ImportEngine.RunAsync(flakySource, ghosts, vault, @"{name}.{ext}", ImportConflict.KeepBoth, null, CancellationToken.None);
 Check(!flakyRun.Interrupted, "failures alone are not treated as a disconnect");
 Check(flakyRun.Processed == ghosts.Count, $"keeps going through all files ({flakyRun.Processed}/{ghosts.Count})");
 Check(flakyRun.Failed == ghosts.Count, "and reports them as failures");
@@ -181,7 +213,7 @@ var cancelled = new CancellationTokenSource();
 cancelled.Cancel();
 try
 {
-    await ImportEngine.RunAsync(cardSource, found, vault, @"{name}.{ext}", null, cancelled.Token);
+    await ImportEngine.RunAsync(cardSource, found, vault, @"{name}.{ext}", ImportConflict.KeepBoth, null, cancelled.Token);
     Check(false, "cancellation throws");
 }
 catch (OperationCanceledException) { Check(true, "cancellation throws"); }

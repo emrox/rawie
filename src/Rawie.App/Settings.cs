@@ -16,6 +16,9 @@ sealed class Settings
     public string? ImportFolder { get; set; }
     public string? ImportPattern { get; set; }
 
+    /// What to do when a destination name is already taken: KeepBoth / Skip / Overwrite.
+    public string? ImportConflict { get; set; }
+
     /// Width of the folder pane, so a resize survives a restart.
     public double? TreeWidth { get; set; }
 

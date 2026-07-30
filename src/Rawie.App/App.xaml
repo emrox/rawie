@@ -4,6 +4,17 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls">
     <Application.Resources>
-        <controls:XamlControlsResources />
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <controls:XamlControlsResources />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Button intent tokens. WinUI already provides the "primary action" look as
+                 AccentButtonStyle; these add the matching destructive variant, using the same reds
+                 Windows uses for critical state. Apply them with Theme.AsPrimary()/AsDanger(). -->
+            <SolidColorBrush x:Key="DangerButtonBackground" Color="#C42B1C" />
+            <SolidColorBrush x:Key="DangerButtonBackgroundPointerOver" Color="#B12719" />
+            <SolidColorBrush x:Key="DangerButtonBackgroundPressed" Color="#962117" />
+        </ResourceDictionary>
     </Application.Resources>
 </Application>
