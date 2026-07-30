@@ -45,6 +45,11 @@ public sealed partial class MainWindow : Window
         // handledEventsToo: the GridView swallows Enter in grid mode, so a normal KeyDown never sees it.
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
 
+        StyleTitleBar();
+        // Follow the user switching Windows between light and dark while the app is open.
+        if (Content is FrameworkElement root)
+            root.ActualThemeChanged += (_, _) => StyleTitleBar();
+
         BuildToolMenu();
         if (_settings.TreeWidth is { } saved)
             Root.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(saved, TreeMinWidth, TreeMaxWidth));
@@ -167,6 +172,54 @@ public sealed partial class MainWindow : Window
         SyncToolMenuChecks();
         if (_all.Count > 0) ApplyView(selectFirst: true);
     }
+
+    // --- title bar ---
+
+    /// Paint the caption bar in the app's own colours. Left alone it renders in the system default,
+    /// which sits bright and separate above a dark UI.
+    private void StyleTitleBar()
+    {
+        try
+        {
+            if (!Microsoft.UI.Windowing.AppWindowTitleBar.IsCustomizationSupported()) return;
+
+            var id = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WindowNative.GetWindowHandle(this));
+            var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(id);
+
+            // Window icon (title bar + taskbar), generated from assets/logo.svg.
+            var icon = Path.Combine(AppContext.BaseDirectory, "logo.ico");
+            if (File.Exists(icon)) appWindow.SetIcon(icon);
+
+            var bar = appWindow.TitleBar;
+
+            var background = ThemeColor("SolidBackgroundFillColorBaseBrush", Microsoft.UI.Colors.Black);
+            var text = ThemeColor("TextFillColorPrimaryBrush", Microsoft.UI.Colors.White);
+            var dimText = ThemeColor("TextFillColorSecondaryBrush", text);
+            var hover = ThemeColor("SubtleFillColorSecondaryBrush", background);
+            var pressed = ThemeColor("SubtleFillColorTertiaryBrush", background);
+
+            bar.BackgroundColor = background;
+            bar.InactiveBackgroundColor = background;
+            bar.ForegroundColor = text;
+            bar.InactiveForegroundColor = dimText;
+
+            // The caption buttons sit on the same strip, so they have to match too.
+            bar.ButtonBackgroundColor = background;
+            bar.ButtonInactiveBackgroundColor = background;
+            bar.ButtonForegroundColor = text;
+            bar.ButtonInactiveForegroundColor = dimText;
+            bar.ButtonHoverBackgroundColor = hover;
+            bar.ButtonHoverForegroundColor = text;
+            bar.ButtonPressedBackgroundColor = pressed;
+            bar.ButtonPressedForegroundColor = text;
+        }
+        catch (Exception e) { Diag.Log("titlebar: " + e.Message); }
+    }
+
+    private static Windows.UI.Color ThemeColor(string key, Windows.UI.Color fallback) =>
+        Application.Current.Resources.TryGetValue(key, out var value)
+        && value is Microsoft.UI.Xaml.Media.SolidColorBrush brush
+            ? brush.Color : fallback;
 
     // --- resizable folder pane ---
     private const double TreeMinWidth = 140, TreeMaxWidth = 700;

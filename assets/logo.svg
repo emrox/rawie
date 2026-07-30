@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Rawie">
+  <defs>
+    <linearGradient id="rwBarrel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#39465A"/>
+      <stop offset="1" stop-color="#151A22"/>
+    </linearGradient>
+    <radialGradient id="rwGlass" cx="0.35" cy="0.28" r="0.85">
+      <stop offset="0" stop-color="#1B2430"/>
+      <stop offset="1" stop-color="#0A0E14"/>
+    </radialGradient>
+    <linearGradient id="rwPaw" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC94B"/>
+      <stop offset="1" stop-color="#F08A20"/>
+    </linearGradient>
+  </defs>
+
+  <!-- lens barrel -->
+  <circle cx="32" cy="32" r="31" fill="url(#rwBarrel)"/>
+  <!-- front element -->
+  <circle cx="32" cy="32" r="25.5" fill="url(#rwGlass)"/>
+  <!-- coating rim -->
+  <circle cx="32" cy="32" r="25.5" fill="none" stroke="#F5A524" stroke-opacity="0.35" stroke-width="1.5"/>
+
+  <!-- paw -->
+  <g fill="url(#rwPaw)">
+    <path d="M32 31.5c7 0 13 4.5 13 10c0 5-5.5 8-13 8s-13-3-13-8c0-5.5 6-10 13-10z"/>
+    <ellipse cx="17.5" cy="30" rx="4.4" ry="5.6" transform="rotate(-30 17.5 30)"/>
+    <ellipse cx="24.5" cy="22.5" rx="4.8" ry="6" transform="rotate(-14 24.5 22.5)"/>
+    <ellipse cx="39.5" cy="22.5" rx="4.8" ry="6" transform="rotate(14 39.5 22.5)"/>
+    <ellipse cx="46.5" cy="30" rx="4.4" ry="5.6" transform="rotate(30 46.5 30)"/>
+  </g>
+
+  <!-- glass highlight -->
+  <path d="M13.5 25.5A20 20 0 0 1 25 13.2" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="3" stroke-linecap="round"/>
+</svg>
