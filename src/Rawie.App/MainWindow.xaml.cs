@@ -32,6 +32,9 @@ public sealed partial class MainWindow : Window
     private IReadOnlyList<PhotoItem> _current = Array.Empty<PhotoItem>();
     public ObservableCollection<ExifRow> Exif { get; } = new();
 
+    /// The filesystem folder currently shown, or null when browsing a camera.
+    private string? _currentFolder;
+
     private bool _preview;
     private int _exifToken;          // guards against stale async EXIF/preview updates
     private PhotoItem? _selectedPhoto;   // so the previous item's selection border can be cleared
@@ -80,6 +83,7 @@ public sealed partial class MainWindow : Window
     {
         if (_preview) ExitPreview();   // a new folder always lands in the grid
         ThumbLoader.Reset();           // abandon thumbnail work queued for the previous folder
+        _currentFolder = path;
         PathText.Text = path;
 
         var list = new List<PhotoItem>();
@@ -109,6 +113,7 @@ public sealed partial class MainWindow : Window
         sw.Stop();
 
         SetItems(list);
+        WatchFolder(path);
         Diag.Log($"loaded {list.Count} items from {path} (ratings {sw.ElapsedMilliseconds}ms)");
 
         // Remember where we were, so a blank "start folder" setting reopens here next time.
@@ -171,6 +176,56 @@ public sealed partial class MainWindow : Window
     {
         SyncToolMenuChecks();
         if (_all.Count > 0) ApplyView(selectFirst: true);
+    }
+
+    // --- keep the grid in step with what's actually on disk ---
+    //
+    // Changes don't only come from us: a drag-out move, a delete from the Explorer context menu, or
+    // another program writing into the folder all leave the view stale. One watcher covers them all.
+    private FileSystemWatcher? _watcher;
+    private DispatcherTimer? _refreshDebounce;
+
+    private void WatchFolder(string? path)
+    {
+        _watcher?.Dispose();
+        _watcher = null;
+        if (path is null || !Directory.Exists(path)) return;   // camera folders have nothing to watch
+
+        try
+        {
+            _watcher = new FileSystemWatcher(path)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Size,
+                IncludeSubdirectories = false,
+            };
+            _watcher.Created += OnFolderContentsChanged;
+            _watcher.Deleted += OnFolderContentsChanged;
+            _watcher.Renamed += OnFolderContentsChanged;
+            _watcher.EnableRaisingEvents = true;
+        }
+        catch (Exception e) { Diag.Log("watch: " + e.Message); }
+    }
+
+    // Fires on a background thread, often several times for one operation — hop to the UI thread and
+    // debounce so a burst (an import, a multi-file move) causes a single reload.
+    private void OnFolderContentsChanged(object sender, FileSystemEventArgs e) =>
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _refreshDebounce ??= CreateRefreshTimer();
+            _refreshDebounce.Stop();
+            _refreshDebounce.Start();
+        });
+
+    private DispatcherTimer CreateRefreshTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_modalDepth > 0) return;                 // don't yank the view while a dialog is open
+            ReloadKeepingPosition(ThumbGrid.SelectedIndex);
+        };
+        return timer;
     }
 
     // --- title bar ---
@@ -502,8 +557,8 @@ public sealed partial class MainWindow : Window
         // A verb may have deleted/renamed the file (Delete, Rename, Move to…). If it's gone, resync.
         // ponytail: existence check instead of a FileSystemWatcher — cheap, covers the destructive verbs.
         var stillThere = p.IsFolder ? Directory.Exists(p.Path) : File.Exists(p.Path);
-        if (!p.IsShell && !stillThere && Directory.Exists(PathText.Text))
-            LoadFolder(PathText.Text);
+        if (!p.IsShell && !stillThere && Directory.Exists(_currentFolder ?? ""))
+            LoadFolder(_currentFolder!);
     }
 
     // Right-click in the folder tree: same real Explorer menu for folders, drives and cameras.

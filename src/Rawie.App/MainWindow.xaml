@@ -31,6 +31,7 @@
                         <TreeViewItem ItemsSource="{x:Bind Children}" Content="{x:Bind Name}"
                                       IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
                                       IsSelected="{x:Bind IsSelected, Mode=TwoWay}"
+                                      AllowDrop="True" DragOver="OnFolderDragOver" Drop="OnFolderDrop"
                                       AutomationProperties.Name="{x:Bind Name}" />
                     </DataTemplate>
                 </TreeView.ItemTemplate>
@@ -95,6 +96,9 @@
                 <GridView x:Name="ThumbGrid" Padding="8"
                           SelectionMode="Extended"
                           UseSystemFocusVisuals="False"
+                          CanDragItems="True"
+                          DragItemsStarting="OnGridDragItemsStarting"
+                          AllowDrop="True" DragOver="OnFolderDragOver" Drop="OnFolderDrop"
                           SelectionChanged="OnSelectionChanged"
                           DoubleTapped="OnItemDoubleTapped"
                           RightTapped="OnItemRightTapped"
@@ -116,7 +120,8 @@
                             <Grid Width="184" Height="184" Margin="4" RowDefinitions="*,Auto"
                                   Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                   BorderBrush="{x:Bind SelectionBrush, Mode=OneWay}" BorderThickness="2"
-                                  CornerRadius="4">
+                                  CornerRadius="4"
+                                  AllowDrop="True" DragOver="OnFolderDragOver" Drop="OnFolderDrop">
                                 <Image Grid.Row="0" Source="{x:Bind Thumb, Mode=OneWay}" Stretch="Uniform" Margin="4" />
                                 <Border Grid.Row="0" VerticalAlignment="Bottom" HorizontalAlignment="Center"
                                         Visibility="{x:Bind RatingVisibility, Mode=OneWay}"

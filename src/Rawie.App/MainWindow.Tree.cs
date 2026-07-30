@@ -249,6 +249,7 @@ public sealed partial class MainWindow
     {
         if (_preview) ExitPreview();
         ThumbLoader.Reset();
+        _currentFolder = null;   // camera: no filesystem path
         PathText.Text = displayName + "  (camera)";
 
         var list = new List<PhotoItem>();
@@ -269,6 +270,7 @@ public sealed partial class MainWindow
         catch (Exception e) { Diag.Log("load shell folder fail: " + e.Message); }
 
         SetItems(list);
+        WatchFolder(null);   // MTP has no filesystem path to watch
         Diag.Log($"loaded {list.Count} shell items from '{displayName}'");
     }
 

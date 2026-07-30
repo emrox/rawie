@@ -24,6 +24,13 @@ static class FileOps
     public static bool Rename(string path, string newName, HWND owner) =>
         Run(owner, FILEOP_FLAGS.FOF_ALLOWUNDO, op => op.RenameItem(Item(path), newName, null));
 
+    public static bool Copy(IReadOnlyList<string> paths, string destFolder, HWND owner) =>
+        Run(owner, FILEOP_FLAGS.FOF_ALLOWUNDO, op =>
+        {
+            var dest = Item(destFolder);
+            foreach (var p in paths) op.CopyItem(Item(p), dest, null, null);
+        });
+
     public static bool Move(IReadOnlyList<string> paths, string destFolder, HWND owner) =>
         Run(owner, FILEOP_FLAGS.FOF_ALLOWUNDO, op =>
         {

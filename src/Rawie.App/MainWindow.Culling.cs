@@ -159,7 +159,7 @@ public sealed partial class MainWindow
     private void ReloadKeepingPosition(int index)
     {
         var wasPreview = _preview;
-        var folder = PathText.Text;
+        var folder = _currentFolder;
         if (!Directory.Exists(folder)) return;
 
         LoadFolder(folder);
