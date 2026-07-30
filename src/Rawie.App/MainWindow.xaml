@@ -30,8 +30,25 @@
         </Border>
 
         <!-- content: toolbar + (grid | preview) + status -->
-        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+        <Grid x:Name="CenterPane" Grid.Column="1" RowDefinitions="Auto,*,Auto" SizeChanged="OnCenterPaneSizeChanged">
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Padding="12">
+                <!-- Shown only when the toolbar no longer fits; holds the same commands. -->
+                <Button x:Name="MenuButton" Visibility="Collapsed" Padding="10,5"
+                        AutomationProperties.Name="Menu" ToolTipService.ToolTip="Menu">
+                    <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE700;" FontSize="14" />
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="Open folder…" Click="OnPickFolder" />
+                            <MenuFlyoutItem Text="Import…" Click="OnOpenImport" />
+                            <MenuFlyoutItem Text="Settings…" Click="OnOpenSettings" />
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutSubItem x:Name="FilterMenu" Text="Filter" />
+                            <MenuFlyoutSubItem x:Name="SortMenu" Text="Sort" />
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+
+                <StackPanel x:Name="WideTools" Orientation="Horizontal" Spacing="12">
                 <Button Content="Open folder…" Click="OnPickFolder" />
                 <Button Content="Import…" Click="OnOpenImport" />
                 <Button Content="Settings…" Click="OnOpenSettings" />
@@ -53,6 +70,7 @@
                     <ComboBoxItem Content="Sort: name" Tag="name" IsSelected="True" />
                     <ComboBoxItem Content="Sort: rating" Tag="rating" />
                 </ComboBox>
+                </StackPanel>
 
                 <TextBlock x:Name="PathText" Text="(no folder)" VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis" />

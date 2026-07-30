@@ -45,6 +45,7 @@ public sealed partial class MainWindow : Window
         // handledEventsToo: the GridView swallows Enter in grid mode, so a normal KeyDown never sees it.
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
 
+        BuildToolMenu();
         ThumbLoader.Start();   // pump runs on the UI thread's context
         PopulateTreeRoots();
         HookDeviceChanges();
@@ -160,7 +161,56 @@ public sealed partial class MainWindow : Window
     // mid-cull is disorienting. The view refreshes when the filter/sort or folder changes.
     private void OnViewOptionChanged(object sender, SelectionChangedEventArgs e)
     {
+        SyncToolMenuChecks();
         if (_all.Count > 0) ApplyView(selectFirst: true);
+    }
+
+    // --- narrow-window toolbar: collapse into a hamburger menu ---
+
+    /// Mirror the filter/sort combos into the overflow menu. The combos stay the source of truth —
+    /// the menu items just move their selection, so there is only one list to maintain.
+    private void BuildToolMenu()
+    {
+        void Fill(MenuFlyoutSubItem menu, ComboBox combo, string group)
+        {
+            for (var i = 0; i < combo.Items.Count; i++)
+            {
+                var index = i;
+                var entry = new RadioMenuFlyoutItem
+                {
+                    Text = (combo.Items[i] as ComboBoxItem)?.Content?.ToString() ?? $"{i}",
+                    GroupName = group,
+                    IsChecked = combo.SelectedIndex == i,
+                };
+                entry.Click += (_, _) => combo.SelectedIndex = index;
+                menu.Items.Add(entry);
+            }
+        }
+
+        Fill(FilterMenu, FilterBox, "filter");
+        Fill(SortMenu, SortBox, "sort");
+    }
+
+    private void SyncToolMenuChecks()
+    {
+        void Sync(MenuFlyoutSubItem menu, ComboBox combo)
+        {
+            for (var i = 0; i < menu.Items.Count; i++)
+                if (menu.Items[i] is RadioMenuFlyoutItem r) r.IsChecked = combo.SelectedIndex == i;
+        }
+
+        if (FilterMenu is null || SortMenu is null) return;   // during InitializeComponent
+        Sync(FilterMenu, FilterBox);
+        Sync(SortMenu, SortBox);
+    }
+
+    private void OnCenterPaneSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Below this the buttons and dropdowns start running off the edge of the pane.
+        const double needed = 640;
+        var narrow = e.NewSize.Width < needed;
+        WideTools.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
+        MenuButton.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // --- shared window helpers (focus, modal dialogs, HWND) ---
