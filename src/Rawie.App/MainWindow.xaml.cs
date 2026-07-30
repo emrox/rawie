@@ -208,13 +208,22 @@ public sealed partial class MainWindow : Window
 
     // Fires on a background thread, often several times for one operation — hop to the UI thread and
     // debounce so a burst (an import, a multi-file move) causes a single reload.
-    private void OnFolderContentsChanged(object sender, FileSystemEventArgs e) =>
+    private void OnFolderContentsChanged(object sender, FileSystemEventArgs e)
+    {
+        // Rating a photo writes its .xmp sidecar into this very folder. That doesn't change which
+        // photos are here, and reloading for it would throw away the scroll position mid-cull.
+        // (.tmp is the scratch file sidecar and cache writes rename from.)
+        var ext = Path.GetExtension(e.Name ?? "");
+        if (ext.Equals(".xmp", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".tmp", StringComparison.OrdinalIgnoreCase)) return;
+
         DispatcherQueue.TryEnqueue(() =>
         {
             _refreshDebounce ??= CreateRefreshTimer();
             _refreshDebounce.Stop();
             _refreshDebounce.Start();
         });
+    }
 
     private DispatcherTimer CreateRefreshTimer()
     {
