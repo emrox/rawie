@@ -1,12 +1,4 @@
 <Solution>
-  <Folder Name="/spikes/">
-    <Project Path="spikes/S0.Hello/S0.Hello.csproj" />
-    <Project Path="spikes/SA.Thumbs/SA.Thumbs.csproj" />
-    <Project Path="spikes/SB.ShellMenu/SB.ShellMenu.csproj" />
-    <Project Path="spikes/SC.Import/SC.Import.csproj" />
-    <Project Path="spikes/SD.Video/SD.Video.csproj" />
-    <Project Path="spikes/SE.Xmp/SE.Xmp.csproj" />
-  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Rawie.App/Rawie.App.csproj">
       <Platform Project="x64" />
