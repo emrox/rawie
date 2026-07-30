@@ -3,7 +3,7 @@ using Vanara.PInvoke;
 using Vanara.Windows.Shell;
 using Directory = System.IO.Directory;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 /// Where photos are coming from: a card/folder with a real path, or an MTP camera (no drive letter).
 public sealed record ImportSource(string Name, string? FolderPath, ShellItem? Device)
@@ -337,7 +337,7 @@ public static class ImportEngine
         Mtp.Gate.Wait(ct);
         try
         {
-            var stageDir = Path.Combine(Path.GetTempPath(), "rawie_import_stage");
+            var stageDir = Path.Combine(Path.GetTempPath(), "rawimp_import_stage");
             Directory.CreateDirectory(stageDir);
             var temp = Path.Combine(stageDir, item.Name);
 

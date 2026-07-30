@@ -4,7 +4,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
-    <RootNamespace>Rawie.App</RootNamespace>
+    <RootNamespace>RAWimp.App</RootNamespace>
+    <AssemblyName>RAWimp</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\assets\logo.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
@@ -18,7 +19,7 @@
   </PropertyGroup>
 
   <!-- The Windows App SDK bundles ONNX Runtime and DirectML (~39 MB) for its Windows AI APIs.
-       Rawie uses none of them, and a self-contained build runs fine without them — verified by
+       RAWimp uses none of them, and a self-contained build runs fine without them — verified by
        publishing, deleting them and launching. Delete this target if the app ever adopts a
        Windows AI feature. -->
   <Target Name="DropUnusedAiRuntimes" AfterTargets="Publish" Condition="'$(SelfContained)' == 'true'">

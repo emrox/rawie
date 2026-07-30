@@ -1,6 +1,6 @@
 using Microsoft.UI.Xaml;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 public partial class App : Application
 {

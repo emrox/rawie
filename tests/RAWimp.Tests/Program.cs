@@ -1,8 +1,8 @@
 using System.Xml.Linq;
-using Rawie.App;
+using RAWimp.App;
 
 // Assertion checks for the logic that touches user data: XMP sidecar ratings and the import
-// destination pattern. Plain console app — run it with `dotnet run --project tests/Rawie.Tests`.
+// destination pattern. Plain console app — run it with `dotnet run --project tests/RAWimp.Tests`.
 
 var failures = 0;
 void Check(bool ok, string what)
@@ -11,7 +11,7 @@ void Check(bool ok, string what)
     if (!ok) failures++;
 }
 
-var dir = Path.Combine(Path.GetTempPath(), "rawie_tests");
+var dir = Path.Combine(Path.GetTempPath(), "rawimp_tests");
 Directory.CreateDirectory(dir);
 foreach (var f in Directory.GetFiles(dir)) File.Delete(f);
 

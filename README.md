@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="assets/logo.png" width="112" alt="Rawie">
+<img src="assets/logo.png" width="112" alt="RAWimp">
 
-# Rawie
+# RAWimp
 
 **A fast photo browser, culler and image importer for Windows.**
 
 Built for camera RAW files, with the Windows shell woven through it.
 
-<img src="assets/screenshot.jpg" width="900" alt="Rawie showing a folder of RAW photos with ratings and EXIF">
+<img src="assets/screenshot.jpg" width="900" alt="RAWimp showing a folder of RAW photos with ratings and EXIF">
 
 </div>
 
@@ -79,35 +79,35 @@ Installing the **Raw Image Extension** from the Microsoft Store lets Windows pro
 more RAW formats.
 
 ```bash
-dotnet run --project src/Rawie.App
+dotnet run --project src/RAWimp.App
 ```
 
 To open a specific folder on launch:
 
 ```bash
-dotnet run --project src/Rawie.App -- --folder "D:\Photos\2026"
+dotnet run --project src/RAWimp.App -- --folder "D:\Photos\2026"
 ```
 
-Rawie opens the folder you had last time, or one you nominate in **Settings**.
+RAWimp opens the folder you had last time, or one you nominate in **Settings**.
 
 ## Where things are kept
 
 | What | Where |
 |---|---|
 | Ratings | `<photo>.xmp`, beside each photo |
-| Thumbnail cache | `%LOCALAPPDATA%\Rawie\thumbs` — disposable, clearable from Settings |
-| Settings | `%LOCALAPPDATA%\Rawie\settings.json` |
+| Thumbnail cache | `%LOCALAPPDATA%\RAWimp\thumbs` — disposable, clearable from Settings |
+| Settings | `%LOCALAPPDATA%\RAWimp\settings.json` |
 
 ## Development
 
 Build and test:
 
 ```bash
-dotnet build Rawie.slnx
+dotnet build RAWimp.slnx
 ```
 
 ```bash
-dotnet run --project tests/Rawie.Tests
+dotnet run --project tests/RAWimp.Tests
 ```
 
 The tests compile the real source files rather than copies, and cover sidecar reading and writing,

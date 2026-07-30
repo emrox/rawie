@@ -16,4 +16,4 @@ testdata/*
 # Spike scratch output (posters, benchmark CSVs, import runs)
 out_spike*/
 spikes/
-Rawie.Spikes.slnx
+RAWimp.Spikes.slnx

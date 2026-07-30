@@ -3,7 +3,7 @@ using MetadataExtractor.Formats.Exif;
 using MetadataExtractor.Formats.GeoTiff;
 using Directory = System.IO.Directory;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Reads the metadata shown in the info pane. Pure: a path in, display rows out — no UI, so it can
 // run off the UI thread (and be tested on its own).

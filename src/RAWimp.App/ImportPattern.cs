@@ -3,7 +3,7 @@ using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using MetadataExtractor.Formats.QuickTime;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 /// Values a destination pattern can refer to, read from a photo/video's metadata.
 public sealed record ImportTokens(DateTime When, string Make, string Model, string Ext, string OriginalName)

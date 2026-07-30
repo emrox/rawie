@@ -11,7 +11,7 @@ using Windows.Storage;
 using Windows.Storage.FileProperties;
 using Windows.Storage.Streams;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // One file in the current folder. Two sources:
 //   filesystem -> thumbnail via WinRT StorageFile.GetThumbnailAsync (fast shell cache)

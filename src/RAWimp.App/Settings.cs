@@ -1,8 +1,8 @@
 using System.Text.Json;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
-// User settings in %LOCALAPPDATA%\Rawie\settings.json. Small and forgiving: a corrupt or missing
+// User settings in %LOCALAPPDATA%\RAWimp\settings.json. Small and forgiving: a corrupt or missing
 // file just yields defaults rather than blocking startup.
 sealed class Settings
 {
@@ -23,7 +23,7 @@ sealed class Settings
     public double? TreeWidth { get; set; }
 
     private static string Dir => System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Rawie");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RAWimp");
     private static string File_ => System.IO.Path.Combine(Dir, "settings.json");
 
     public static Settings Load()

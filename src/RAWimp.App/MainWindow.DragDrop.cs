@@ -6,7 +6,7 @@ using Windows.ApplicationModel.DataTransfer.DragDrop;
 using Windows.Storage;
 using Directory = System.IO.Directory;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Drag and drop:
 //   out  — drag photos/folders into Explorer, the desktop, or any other app
@@ -61,7 +61,7 @@ public sealed partial class MainWindow
         return result;
     }
 
-    // --- dropping onto a folder (from Rawie, Explorer, or any other app) ---
+    // --- dropping onto a folder (from RAWimp, Explorer, or any other app) ---
     private void OnFolderDragOver(object sender, DragEventArgs e)
     {
         var target = TargetFolderOf(sender);

@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using Directory = System.IO.Directory;
 using Visibility = Microsoft.UI.Xaml.Visibility;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Culling: star ratings / reject flags (stored in XMP sidecars) and the file operations that act on
 // them — delete, rename, move — all routed through the shell so they land in the Recycle Bin and

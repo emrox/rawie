@@ -2,16 +2,16 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Channels;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
-// On-disk thumbnail cache: %LOCALAPPDATA%\Rawie\thumbs\<ab>\<hash>.thumb
+// On-disk thumbnail cache: %LOCALAPPDATA%\RAWimp\thumbs\<ab>\<hash>.thumb
 // Stores the raw bytes the shell handed us (JPEG/PNG), so a cache hit decodes as a plain image and
 // never re-enters the Windows RAW codec — the expensive (and crash-prone) part of a RAW folder.
 // Disposable + self-healing: delete the folder and it rebuilds.
 static class ThumbCache
 {
     private static readonly string Dir = System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Rawie", "thumbs");
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RAWimp", "thumbs");
 
     // Key covers mtime + length so an edited file re-thumbnails instead of showing a stale image.
     public static string? KeyFor(string path, uint size)

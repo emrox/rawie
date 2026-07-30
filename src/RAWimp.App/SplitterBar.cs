@@ -1,7 +1,7 @@
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Controls;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // A thin draggable divider. WinUI ships no GridSplitter, and pulling in a toolkit package for one
 // control isn't worth it — this is just pointer capture plus a resize cursor.

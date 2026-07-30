@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Star ratings / reject flags stored in XMP sidecars next to the photo — the format Bridge and
 // Lightroom read. We never write into the original image: culling must not touch the user's files.

@@ -15,7 +15,7 @@ using Vanara.Windows.Shell;
 using Directory = System.IO.Directory;
 using Visibility = Microsoft.UI.Xaml.Visibility;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 public sealed partial class MainWindow : Window
 {
@@ -43,7 +43,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Title = "Rawie";
+        Title = "RAWimp";
 
         // handledEventsToo: the GridView swallows Enter in grid mode, so a normal KeyDown never sees it.
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);

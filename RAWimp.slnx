@@ -1,10 +1,10 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Rawie.App/Rawie.App.csproj">
+    <Project Path="src/RAWimp.App/RAWimp.App.csproj">
       <Platform Project="x64" />
     </Project>
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/Rawie.Tests/Rawie.Tests.csproj" />
+    <Project Path="tests/RAWimp.Tests/RAWimp.Tests.csproj" />
   </Folder>
 </Solution>

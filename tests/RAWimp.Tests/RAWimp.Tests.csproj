@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <PlatformTarget>x64</PlatformTarget>
-    <RootNamespace>Rawie.App</RootNamespace>
+    <RootNamespace>RAWimp.App</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,11 +16,11 @@
 
   <ItemGroup>
     <!-- Test the real code, not copies. Anything free of WinUI can be linked here. -->
-    <Compile Include="..\..\src\Rawie.App\Xmp.cs" />
-    <Compile Include="..\..\src\Rawie.App\ImportPattern.cs" />
-    <Compile Include="..\..\src\Rawie.App\ImportEngine.cs" />
-    <Compile Include="..\..\src\Rawie.App\Mtp.cs" />
-    <Compile Include="..\..\src\Rawie.App\Diag.cs" />
+    <Compile Include="..\..\src\RAWimp.App\Xmp.cs" />
+    <Compile Include="..\..\src\RAWimp.App\ImportPattern.cs" />
+    <Compile Include="..\..\src\RAWimp.App\ImportEngine.cs" />
+    <Compile Include="..\..\src\RAWimp.App\Mtp.cs" />
+    <Compile Include="..\..\src\RAWimp.App\Diag.cs" />
   </ItemGroup>
 
 </Project>

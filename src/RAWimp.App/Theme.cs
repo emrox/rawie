@@ -1,7 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Button intent, in the platform's own vocabulary: WinUI calls the default action "Accent" and the
 // error state "Critical", so these wrap those rather than inventing a parallel naming scheme.

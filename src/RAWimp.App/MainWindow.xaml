@@ -1,8 +1,8 @@
 <Window
-    x:Class="Rawie.App.MainWindow"
+    x:Class="RAWimp.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Rawie.App">
+    xmlns:local="using:RAWimp.App">
 
     <!-- KeyboardAcceleratorPlacementMode=Hidden: the root Grid spans the window, so WinUI's automatic
          "Ctrl+O" accelerator tooltip would pop up whenever the pointer sits over empty space. -->

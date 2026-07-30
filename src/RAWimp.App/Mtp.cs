@@ -1,4 +1,4 @@
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // An MTP device (camera/phone) serves ONE transfer at a time. Every read in the app — grid
 // thumbnails, big previews, imports — has to queue behind the same lock; two independent locks meant

@@ -63,9 +63,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "v${{ inputs.version }}"
-          artifacts/Rawie-setup-x64.msi
-          artifacts/Rawie-portable-win-x64.zip
+          artifacts/RAWimp-setup-x64.msi
+          artifacts/RAWimp-portable-win-x64.zip
           --target "${{ github.sha }}"
-          --title "Rawie ${{ inputs.version }}"
+          --title "RAWimp ${{ inputs.version }}"
           --generate-notes
           ${{ inputs.prerelease && '--prerelease' || '' }}

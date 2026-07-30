@@ -3,7 +3,7 @@ using Vanara.PInvoke;
 using static Vanara.PInvoke.Shell32;
 using static Vanara.PInvoke.User32;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Hosts the genuine Explorer context menu (IContextMenu), including third-party shell extensions.
 //

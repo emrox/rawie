@@ -4,7 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Directory = System.IO.Directory;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // The import dialog: pick a card or camera, choose where the photos should land and how they should
 // be named, watch what that will produce, then copy with verification.

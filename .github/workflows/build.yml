@@ -30,25 +30,25 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore Rawie.slnx
+        run: dotnet restore RAWimp.slnx
 
       - name: Build
-        run: dotnet build Rawie.slnx -c Release --no-restore
+        run: dotnet build RAWimp.slnx -c Release --no-restore
 
       - name: Test
-        run: dotnet run --project tests/Rawie.Tests -c Release --no-build
+        run: dotnet run --project tests/RAWimp.Tests -c Release --no-build
 
       # --- portable: self-contained, no install and no prerequisites ---
       - name: Publish portable
         run: >
-          dotnet publish src/Rawie.App -c Release -r win-x64
+          dotnet publish src/RAWimp.App -c Release -r win-x64
           --self-contained true
           -p:WindowsAppSDKSelfContained=true
           -p:WindowsPackageType=None
           -o publish/portable
 
       - name: Zip portable
-        run: Compress-Archive -Path publish/portable/* -DestinationPath Rawie-portable-win-x64.zip
+        run: Compress-Archive -Path publish/portable/* -DestinationPath RAWimp-portable-win-x64.zip
 
       # --- installer: a plain MSI, built from the same files as the portable build ---
       #
@@ -62,18 +62,18 @@ jobs:
 
       - name: Build installer
         run: >
-          wix build installer/Rawie.wxs -arch x64 -ext WixToolset.UI.wixext
+          wix build installer/RAWimp.wxs -arch x64 -ext WixToolset.UI.wixext
           -d Version=${{ inputs.version || '0.0.1' }}
           -d PublishDir=${{ github.workspace }}\publish\portable
           -d AssetsDir=${{ github.workspace }}\assets
-          -o Rawie-setup-x64.msi
+          -o RAWimp-setup-x64.msi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rawie-portable
-          path: Rawie-portable-win-x64.zip
+          name: rawimp-portable
+          path: RAWimp-portable-win-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rawie-installer
-          path: Rawie-setup-x64.msi
+          name: rawimp-installer
+          path: RAWimp-setup-x64.msi

@@ -1,4 +1,4 @@
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Runtime log next to the binary. The app is a GUI, so this is often the only way to see what
 // happened — several crashes this project hit produced no visible error at all.

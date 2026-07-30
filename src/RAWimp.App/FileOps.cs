@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using Vanara.PInvoke;
 using static Vanara.PInvoke.Shell32;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Delete / rename / move through the shell's IFileOperation, so the user gets Explorer's own
 // progress UI, confirmation prompts, undo support and Recycle Bin semantics — instead of a

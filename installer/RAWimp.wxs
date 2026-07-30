@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MSI installer for Rawie.
+  MSI installer for RAWimp.
 
   Built from the self-contained publish output, so the installed app needs no runtimes and the
   installer needs no code-signing certificate to work (unlike MSIX, which Windows refuses to install
   unsigned).
 
-  Per-user install: no administrator rights, lands in %LOCALAPPDATA%\Programs\Rawie.
+  Per-user install: no administrator rights, lands in %LOCALAPPDATA%\Programs\RAWimp.
 
-    wix build installer/Rawie.wxs -arch x64 -ext WixToolset.UI.wixext
+    wix build installer/RAWimp.wxs -arch x64 -ext WixToolset.UI.wixext
         -d PublishDir=<published folder> -d AssetsDir=<repo>\assets
-        -o Rawie-setup-x64.msi
+        -o RAWimp-setup-x64.msi
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
@@ -20,8 +20,8 @@
   <?define Version = "0.0.1"?>
   <?endif?>
 
-  <Package Name="Rawie"
-           Manufacturer="Rawie"
+  <Package Name="RAWimp"
+           Manufacturer="RAWimp"
            Version="$(Version)"
            UpgradeCode="6f2b1c94-5d3a-4f2e-9a41-7c1e8b0d2a55"
            Scope="perUser"
@@ -29,26 +29,26 @@
 
     <!-- Everything in one .msi file — without EmbedCab the payload is written beside it as a
          separate cab, which is no use as a download. -->
-    <Media Id="1" Cabinet="rawie.cab" EmbedCab="yes" CompressionLevel="high" />
+    <Media Id="1" Cabinet="rawimp.cab" EmbedCab="yes" CompressionLevel="high" />
 
     <!-- Installing a newer version replaces the old one rather than stacking copies. -->
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Rawie is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of RAWimp is already installed." />
 
-    <Icon Id="RawieIcon" SourceFile="$(AssetsDir)\logo.ico" />
-    <Property Id="ARPPRODUCTICON" Value="RawieIcon" />
+    <Icon Id="RAWimpIcon" SourceFile="$(AssetsDir)\logo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="RAWimpIcon" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
-        <Directory Id="INSTALLFOLDER" Name="Rawie" />
+        <Directory Id="INSTALLFOLDER" Name="RAWimp" />
       </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ShortcutFolder" Name="Rawie" />
+      <Directory Id="ShortcutFolder" Name="RAWimp" />
     </StandardDirectory>
 
-    <Feature Id="Main" Title="Rawie" Level="1">
+    <Feature Id="Main" Title="RAWimp" Level="1">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>
@@ -59,13 +59,13 @@
     </ComponentGroup>
 
     <Component Id="StartMenuShortcut" Directory="ShortcutFolder" Guid="7b3c4d51-8e2f-4a6b-9d10-3f5a2c7e91b4">
-      <Shortcut Id="RawieShortcut"
-                Name="Rawie"
-                Target="[INSTALLFOLDER]Rawie.App.exe"
+      <Shortcut Id="RAWimpShortcut"
+                Name="RAWimp"
+                Target="[INSTALLFOLDER]RAWimp.exe"
                 WorkingDirectory="INSTALLFOLDER"
-                Icon="RawieIcon" />
+                Icon="RAWimpIcon" />
       <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
-      <RegistryValue Root="HKCU" Key="Software\Rawie" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\RAWimp" Name="installed" Type="integer" Value="1" KeyPath="yes" />
     </Component>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />

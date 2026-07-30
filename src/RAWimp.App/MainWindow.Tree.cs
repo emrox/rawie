@@ -8,7 +8,7 @@ using Vanara.PInvoke;
 using Vanara.Windows.Shell;
 using Directory = System.IO.Directory;
 
-namespace Rawie.App;
+namespace RAWimp.App;
 
 // Folder tree (left pane) and the device detection that keeps its roots in sync with reality.
 public sealed partial class MainWindow
