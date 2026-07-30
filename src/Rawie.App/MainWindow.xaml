@@ -6,7 +6,7 @@
 
     <!-- KeyboardAcceleratorPlacementMode=Hidden: the root Grid spans the window, so WinUI's automatic
          "Ctrl+O" accelerator tooltip would pop up whenever the pointer sits over empty space. -->
-    <Grid x:Name="Root" ColumnDefinitions="260,*,Auto" KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid x:Name="Root" ColumnDefinitions="260,6,*,Auto" KeyboardAcceleratorPlacementMode="Hidden">
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnOpenExternalAccel" />
         </Grid.KeyboardAccelerators>
@@ -14,8 +14,16 @@
         <!-- folder tree (lazy-loaded) -->
         <Border Grid.Column="0" BorderThickness="0,0,1,0"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+            <!-- TreeView's own scroll viewer won't scroll sideways, so it sits in one that will.
+                 The tree is left-aligned and its internal scrolling switched off, letting deep
+                 folder names extend past the pane and become reachable. -->
+            <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Auto">
             <TreeView x:Name="FolderTree" Padding="4" ItemsSource="{x:Bind Roots}"
                       SelectionMode="Single"
+                      HorizontalAlignment="Left"
+                      ScrollViewer.HorizontalScrollMode="Disabled"
+                      ScrollViewer.VerticalScrollMode="Disabled"
                       Expanding="OnFolderExpanding" ItemInvoked="OnFolderInvoked"
                       RightTapped="OnTreeRightTapped">
                 <TreeView.ItemTemplate>
@@ -27,10 +35,17 @@
                     </DataTemplate>
                 </TreeView.ItemTemplate>
             </TreeView>
+            </ScrollViewer>
         </Border>
 
+        <!-- drag to resize the folder pane -->
+        <local:SplitterBar Grid.Column="1" Background="{ThemeResource CardStrokeColorDefaultBrush}"
+                           PointerPressed="OnSplitterPressed"
+                           PointerMoved="OnSplitterMoved"
+                           PointerReleased="OnSplitterReleased" />
+
         <!-- content: toolbar + (grid | preview) + status -->
-        <Grid x:Name="CenterPane" Grid.Column="1" RowDefinitions="Auto,*,Auto" SizeChanged="OnCenterPaneSizeChanged">
+        <Grid x:Name="CenterPane" Grid.Column="2" RowDefinitions="Auto,*,Auto" SizeChanged="OnCenterPaneSizeChanged">
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Padding="12">
                 <!-- Shown only when the toolbar no longer fits; holds the same commands. -->
                 <Button x:Name="MenuButton" Visibility="Collapsed" Padding="10,5"
@@ -135,7 +150,7 @@
         </Grid>
 
         <!-- info / EXIF panel -->
-        <Border Grid.Column="2" Width="300" BorderThickness="1,0,0,0"
+        <Border Grid.Column="3" Width="300" BorderThickness="1,0,0,0"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
             <ScrollViewer>
                 <StackPanel Padding="14" Spacing="6">

@@ -16,6 +16,9 @@ sealed class Settings
     public string? ImportFolder { get; set; }
     public string? ImportPattern { get; set; }
 
+    /// Width of the folder pane, so a resize survives a restart.
+    public double? TreeWidth { get; set; }
+
     private static string Dir => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Rawie");
     private static string File_ => System.IO.Path.Combine(Dir, "settings.json");

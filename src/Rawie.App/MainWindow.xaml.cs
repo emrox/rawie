@@ -46,6 +46,9 @@ public sealed partial class MainWindow : Window
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
 
         BuildToolMenu();
+        if (_settings.TreeWidth is { } saved)
+            Root.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(saved, TreeMinWidth, TreeMaxWidth));
+
         ThumbLoader.Start();   // pump runs on the UI thread's context
         PopulateTreeRoots();
         HookDeviceChanges();
@@ -163,6 +166,40 @@ public sealed partial class MainWindow : Window
     {
         SyncToolMenuChecks();
         if (_all.Count > 0) ApplyView(selectFirst: true);
+    }
+
+    // --- resizable folder pane ---
+    private const double TreeMinWidth = 140, TreeMaxWidth = 700;
+    private double _dragStartX, _dragStartWidth;
+    private bool _draggingSplitter;
+
+    private void OnSplitterPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var bar = (UIElement)sender;
+        _dragStartX = e.GetCurrentPoint(Root).Position.X;
+        _dragStartWidth = Root.ColumnDefinitions[0].ActualWidth;
+        _draggingSplitter = bar.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnSplitterMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_draggingSplitter) return;
+        var delta = e.GetCurrentPoint(Root).Position.X - _dragStartX;
+        var width = Math.Clamp(_dragStartWidth + delta, TreeMinWidth, TreeMaxWidth);
+        Root.ColumnDefinitions[0].Width = new GridLength(width);
+        e.Handled = true;
+    }
+
+    private void OnSplitterReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_draggingSplitter) return;
+        ((UIElement)sender).ReleasePointerCapture(e.Pointer);
+        _draggingSplitter = false;
+
+        _settings.TreeWidth = Root.ColumnDefinitions[0].ActualWidth;   // remember it for next launch
+        _settings.Save();
+        e.Handled = true;
     }
 
     // --- narrow-window toolbar: collapse into a hamburger menu ---
