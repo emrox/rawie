@@ -20,6 +20,9 @@ public sealed partial class MainWindow
     [DllImport("comctl32.dll")]
     private static extern nint DefSubclassProc(nint hWnd, uint msg, nint wParam, nint lParam);
 
+    /// Raised after drives/cameras have been re-detected, so open UI can follow along.
+    private event Action? DevicesChanged;
+
     private const uint WM_DEVICECHANGE = 0x0219;
     private SubclassProc? _subclass;         // keep the delegate alive (GC would crash the pump)
     private DispatcherTimer? _deviceDebounce;
@@ -75,6 +78,7 @@ public sealed partial class MainWindow
 
             AddPortableDevices();
             Diag.Log($"refresh roots -> {Roots.Count}");
+            DevicesChanged?.Invoke();   // e.g. the import dialog rebuilding its source list
         }
         catch (Exception e) { Diag.Log("refresh roots fail: " + e.Message); }
     }

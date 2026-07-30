@@ -230,10 +230,9 @@ public sealed class PhotoItem : INotifyPropertyChanged
 
     // Background only: the slow MTP GetImage. MTP serves one resource at a time -> serialize + GC/retry
     // on ERROR_BUSY. No System.Drawing here. Returns the HBITMAP for the UI thread to convert.
-    private static readonly SemaphoreSlim ShellGate = new(1, 1);
     private static Gdi32.SafeHBITMAP? ShellGetHBitmap(ShellItem shell, uint size, int gen)
     {
-        ShellGate.Wait();
+        Mtp.Gate.Wait();
         try
         {
             if (gen != ThumbLoader.Generation) return null;   // superseded while queued -> skip the MTP work
@@ -253,7 +252,7 @@ public sealed class PhotoItem : INotifyPropertyChanged
                 }
             }
         }
-        finally { ShellGate.Release(); }
+        finally { Mtp.Gate.Release(); }
     }
 
     // No explicit Dispose of _shell: a background thumbnail task may still be extracting an image

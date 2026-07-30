@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>Rawie.App</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MetadataExtractor" Version="2.9.3" />
+    <PackageReference Include="Vanara.Windows.Shell" Version="5.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Test the real code, not copies. Anything free of WinUI can be linked here. -->
+    <Compile Include="..\..\src\Rawie.App\Xmp.cs" />
+    <Compile Include="..\..\src\Rawie.App\ImportPattern.cs" />
+    <Compile Include="..\..\src\Rawie.App\ImportEngine.cs" />
+    <Compile Include="..\..\src\Rawie.App\Mtp.cs" />
+    <Compile Include="..\..\src\Rawie.App\Diag.cs" />
+  </ItemGroup>
+
+</Project>

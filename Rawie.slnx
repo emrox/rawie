@@ -12,4 +12,7 @@
       <Platform Project="x64" />
     </Project>
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Rawie.Tests/Rawie.Tests.csproj" />
+  </Folder>
 </Solution>

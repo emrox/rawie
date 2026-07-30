@@ -12,6 +12,10 @@ sealed class Settings
     /// Last folder the user browsed (used when StartFolder is blank).
     public string? LastFolder { get; set; }
 
+    /// Where imports are copied to, and the folder/name pattern used (remembered between imports).
+    public string? ImportFolder { get; set; }
+    public string? ImportPattern { get; set; }
+
     private static string Dir => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Rawie");
     private static string File_ => System.IO.Path.Combine(Dir, "settings.json");
