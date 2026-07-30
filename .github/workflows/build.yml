@@ -46,57 +46,22 @@ jobs:
       - name: Zip portable
         run: Compress-Archive -Path publish/portable/* -DestinationPath Rawie-portable-win-x64.zip
 
-      # --- MSIX: installable, uses the shared Windows App Runtime (much smaller) ---
+      # --- installer: a plain MSI, built from the same files as the portable build ---
       #
-      # Windows only installs a signed MSIX. This signs with a certificate generated here, so the
-      # artifact is installable once that certificate is trusted (see the .cer published alongside).
-      # To use a real code-signing certificate instead, add it as a secret and point
-      # PackageCertificateKeyFile at it — nothing else changes.
-      - name: Create signing certificate
-        shell: pwsh
+      # Deliberately not MSIX: Windows refuses to install an MSIX unless it is signed by a trusted
+      # certificate, which makes it useless without a paid code-signing certificate. An MSI installs
+      # unsigned. WiX is pinned to v5, which needs no licence acceptance step in CI.
+      - name: Install WiX
         run: |
-          # Subject must match Publisher in Package.appxmanifest, or signing is rejected.
-          $cert = New-SelfSignedCertificate `
-            -Type Custom -Subject "CN=Rawie" `
-            -KeyUsage DigitalSignature -FriendlyName "Rawie CI" `
-            -CertStoreLocation "Cert:\CurrentUser\My" `
-            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
-          $password = ConvertTo-SecureString -String "${{ github.run_id }}" -Force -AsPlainText
-          Export-PfxCertificate -Cert $cert -FilePath signing.pfx -Password $password | Out-Null
-          Export-Certificate  -Cert $cert -FilePath Rawie-signing-certificate.cer | Out-Null
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
 
-      # Packaged unsigned, then signed with signtool: MSBuild's own signing can't import a
-      # password-protected PFX (APPX0105/APPX0107) and silently leaves the package unsigned.
-      - name: Build MSIX
+      - name: Build installer
         run: >
-          dotnet build src/Rawie.App -c Release
-          -p:Platform=x64
-          -p:WindowsPackageType=MSIX
-          -p:GenerateAppxPackageOnBuild=true
-          -p:UapAppxPackageBuildMode=SideloadOnly
-          -p:AppxBundle=Never
-          -p:AppxPackageSigningEnabled=false
-          -p:AppxPackageDir=${{ github.workspace }}\publish\msix\
-
-      - name: Sign and collect MSIX
-        shell: pwsh
-        run: |
-          # Only the app package — the folder also holds the runtime dependency packages.
-          $msix = Get-ChildItem publish/msix -Recurse -Filter 'Rawie.App_*.msix' | Select-Object -First 1
-          if (-not $msix) { throw "no .msix was produced" }
-
-          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
-                      Sort-Object FullName | Select-Object -Last 1
-          & $signtool.FullName sign /fd SHA256 /f signing.pfx /p "${{ github.run_id }}" $msix.FullName
-          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
-
-          Copy-Item $msix.FullName -Destination Rawie-installer-x64.msix
-          "MSIX: {0:N1} MB" -f ($msix.Length / 1MB)
-
-      - name: Remove signing key
-        if: always()
-        shell: pwsh
-        run: Remove-Item signing.pfx -ErrorAction SilentlyContinue
+          wix build installer/Rawie.wxs -arch x64 -ext WixToolset.UI.wixext
+          -d PublishDir=${{ github.workspace }}\publish\portable
+          -d AssetsDir=${{ github.workspace }}\assets
+          -o Rawie-setup-x64.msi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -106,9 +71,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: rawie-installer
-          path: |
-            Rawie-installer-x64.msix
-            Rawie-signing-certificate.cer
+          path: Rawie-setup-x64.msi
 
       # --- tagging v* publishes a release with both builds attached ---
       - name: Publish release
@@ -119,7 +82,6 @@ jobs:
         run: >
           gh release create "${{ github.ref_name }}"
           Rawie-portable-win-x64.zip
-          Rawie-installer-x64.msix
-          Rawie-signing-certificate.cer
+          Rawie-setup-x64.msi
           --title "Rawie ${{ github.ref_name }}"
           --generate-notes

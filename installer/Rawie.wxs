@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSI installer for Rawie.
+
+  Built from the self-contained publish output, so the installed app needs no runtimes and the
+  installer needs no code-signing certificate to work (unlike MSIX, which Windows refuses to install
+  unsigned).
+
+  Per-user install: no administrator rights, lands in %LOCALAPPDATA%\Programs\Rawie.
+
+    wix build installer/Rawie.wxs -arch x64 -ext WixToolset.UI.wixext
+        -d PublishDir=<published folder> -d AssetsDir=<repo>\assets
+        -o Rawie-setup-x64.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Rawie"
+           Manufacturer="Rawie"
+           Version="0.1.0"
+           UpgradeCode="6f2b1c94-5d3a-4f2e-9a41-7c1e8b0d2a55"
+           Scope="perUser"
+           Compressed="yes">
+
+    <!-- Everything in one .msi file — without EmbedCab the payload is written beside it as a
+         separate cab, which is no use as a download. -->
+    <Media Id="1" Cabinet="rawie.cab" EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Installing a newer version replaces the old one rather than stacking copies. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Rawie is already installed." />
+
+    <Icon Id="RawieIcon" SourceFile="$(AssetsDir)\logo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="RawieIcon" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Rawie" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="Rawie" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Rawie" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <!-- Harvests the whole publish folder; no need to list 400+ runtime files by hand. -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(PublishDir)\**" />
+    </ComponentGroup>
+
+    <Component Id="StartMenuShortcut" Directory="ShortcutFolder" Guid="7b3c4d51-8e2f-4a6b-9d10-3f5a2c7e91b4">
+      <Shortcut Id="RawieShortcut"
+                Name="Rawie"
+                Target="[INSTALLFOLDER]Rawie.App.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="RawieIcon" />
+      <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Rawie" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+  </Package>
+</Wix>

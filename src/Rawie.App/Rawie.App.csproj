@@ -11,7 +11,6 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
-    <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Ship one language rather than ~40 sets of satellite resources. -->
@@ -33,17 +32,6 @@
   <ItemGroup>
     <!-- Also needed at runtime: the window icon is set from this file (see MainWindow.StyleTitleBar). -->
     <Content Include="..\..\assets\logo.ico" Link="logo.ico" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <!-- MSIX packaging. The app builds unpackaged (portable) by default; passing
-       -p:WindowsPackageType=MSIX produces an installer from the same project.
-       The manifest must only be present in that mode — an unpackaged build refuses to configure
-       with one. -->
-  <ItemGroup Condition="'$(WindowsPackageType)' == 'MSIX'">
-    <AppxManifest Include="Package.appxmanifest">
-      <SubType>Designer</SubType>
-    </AppxManifest>
-    <Content Include="Assets\*.png" />
   </ItemGroup>
 
   <ItemGroup>

@@ -2,6 +2,13 @@ bin/
 obj/
 .vs/
 
+# Build output: installers, portable publishes, WiX debug symbols
+publish/
+*.msi
+*.msix
+*.wixpdb
+*.pfx
+
 # Test images are large + not ours to redistribute — keep only the README.
 testdata/*
 !testdata/README.md
