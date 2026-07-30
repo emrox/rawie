@@ -14,9 +14,15 @@
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
 
+  <!-- Release builds pass -d Version=x.y.z; local builds get this placeholder. Without a real
+       version each release would claim to be the same one, and upgrades would stop working. -->
+  <?ifndef Version?>
+  <?define Version = "0.0.1"?>
+  <?endif?>
+
   <Package Name="Rawie"
            Manufacturer="Rawie"
-           Version="0.1.0"
+           Version="$(Version)"
            UpgradeCode="6f2b1c94-5d3a-4f2e-9a41-7c1e8b0d2a55"
            Scope="perUser"
            Compressed="yes">

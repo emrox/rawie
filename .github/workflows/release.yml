@@ -1,0 +1,71 @@
+name: release
+
+# Run by hand: Actions -> release -> Run workflow, then give it a version.
+# It builds through the normal build workflow (so the release is tested like any other build),
+# then tags the commit and publishes a GitHub release with the installer and the portable zip.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, digits only, e.g. 0.2.0'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as a pre-release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write        # create the tag and the release
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # An MSI version has to be numeric, and the tag must not already exist — better to fail here
+      # than after a ten-minute build.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$VERSION' is not x.y.z (digits only, no leading v)"
+            exit 1
+          fi
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION already exists"
+            exit 1
+          fi
+
+  build:
+    needs: check
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ inputs.version }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "v${{ inputs.version }}"
+          artifacts/Rawie-setup-x64.msi
+          artifacts/Rawie-portable-win-x64.zip
+          --target "${{ github.sha }}"
+          --title "Rawie ${{ inputs.version }}"
+          --generate-notes
+          ${{ inputs.prerelease && '--prerelease' || '' }}
