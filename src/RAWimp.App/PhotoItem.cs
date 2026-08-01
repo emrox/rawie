@@ -149,7 +149,10 @@ public sealed class PhotoItem : INotifyPropertyChanged
             // Miss: ask the shell (this is the slow, RAW-codec path), then cache the bytes.
             var file = await StorageFile.GetFileFromPathAsync(Path);
             if (Generation != ThumbLoader.Generation) return;
-            var t = await file.GetThumbnailAsync(ThumbnailMode.PicturesView, size, ThumbnailOptions.ResizeThumbnail);
+            // SingleItem, not PicturesView: PicturesView centre-crops to a square, which made every
+            // photo look like it was shot landscape. SingleItem keeps the real aspect ratio so the
+            // grid shows portrait shots as portrait.
+            var t = await file.GetThumbnailAsync(ThumbnailMode.SingleItem, size, ThumbnailOptions.ResizeThumbnail);
             if (t is null || t.Size == 0) return;
 
             var bytes = new byte[t.Size];

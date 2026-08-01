@@ -20,7 +20,10 @@ static class ThumbCache
         {
             var fi = new FileInfo(path);
             if (!fi.Exists) return null;
-            var raw = $"{path.ToLowerInvariant()}|{fi.LastWriteTimeUtc.Ticks}|{fi.Length}|{size}";
+            // v2 = uncropped thumbnails. Bump this whenever how a thumbnail is *rendered* changes:
+            // the cache is keyed on the source file, so without it every stale entry would survive.
+            // Orphaned v1 entries need no cleanup — the size cap evicts oldest-first.
+            var raw = $"v2|{path.ToLowerInvariant()}|{fi.LastWriteTimeUtc.Ticks}|{fi.Length}|{size}";
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
         }
         catch { return null; }
