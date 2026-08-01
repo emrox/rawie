@@ -66,7 +66,7 @@ public sealed partial class MainWindow
 
     private void DeleteSelected()
     {
-        var targets = SelectedPhotos();
+        var targets = SelectedOnDisk();
         if (targets.Count == 0)
         {
             if (ThumbGrid.SelectedItem is PhotoItem p) Rateable(p, "deleted");
@@ -76,14 +76,28 @@ public sealed partial class MainWindow
         var index = ThumbGrid.SelectedIndex;
         // One call for the whole batch: a single confirmation, a single progress dialog, and a
         // single undo entry in Explorer.
-        var paths = targets.SelectMany(t => WithCompanions(t.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (FileOps.Recycle(paths, Hwnd))
+        if (FileOps.Recycle(PathsWithCompanions(targets), Hwnd))
         {
-            StatusText.Text = targets.Count == 1
-                ? $"{targets[0].Name} — moved to Recycle Bin"
-                : $"{targets.Count} photos — moved to Recycle Bin";
+            StatusText.Text = $"{Describe(targets)} — moved to Recycle Bin";
             ReloadKeepingPosition(index);
         }
+    }
+
+    /// Paths for a batch of items, with each photo's sidecar alongside. Folders go as they are —
+    /// the shell moves or deletes their whole contents.
+    private static List<string> PathsWithCompanions(IEnumerable<PhotoItem> items) =>
+        items.SelectMany(i => i.IsFolder ? [i.Path] : WithCompanions(i.Path))
+             .Distinct(StringComparer.OrdinalIgnoreCase)
+             .ToList();
+
+    private static string Describe(IReadOnlyList<PhotoItem> items)
+    {
+        if (items.Count == 1) return items[0].Name;
+        var folders = items.Count(i => i.IsFolder);
+        var files = items.Count - folders;
+        if (folders == 0) return $"{files} photos";
+        if (files == 0) return $"{folders} folder{(folders == 1 ? "" : "s")}";
+        return $"{files} photo{(files == 1 ? "" : "s")} and {folders} folder{(folders == 1 ? "" : "s")}";
     }
 
     private async void RenameSelected()
@@ -124,7 +138,7 @@ public sealed partial class MainWindow
 
     private async void MoveSelected()
     {
-        var targets = SelectedPhotos();
+        var targets = SelectedOnDisk();
         if (targets.Count == 0)
         {
             if (ThumbGrid.SelectedItem is PhotoItem p) Rateable(p, "moved");
@@ -136,12 +150,9 @@ public sealed partial class MainWindow
         if (dest is null) return;
         if (string.Equals(dest, Path.GetDirectoryName(targets[0].Path), StringComparison.OrdinalIgnoreCase)) return;
 
-        var paths = targets.SelectMany(t => WithCompanions(t.Path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (FileOps.Move(paths, dest, Hwnd))
+        if (FileOps.Move(PathsWithCompanions(targets), dest, Hwnd))
         {
-            StatusText.Text = targets.Count == 1
-                ? $"{targets[0].Name} — moved to {dest}"
-                : $"{targets.Count} photos — moved to {dest}";
+            StatusText.Text = $"{Describe(targets)} — moved to {dest}";
             RefreshTreeChildren(dest);        // destination isn't watched — update its tree node
             ReloadKeepingPosition(index);
         }
@@ -171,9 +182,14 @@ public sealed partial class MainWindow
         else RestoreListFocus();   // keep arrow-key navigation alive after a file operation
     }
 
-    /// Photos in the current selection that can actually be rated / operated on.
+    /// Photos in the current selection — folders excluded, because a rating belongs to a photo.
+    /// Rating a selection that includes folders rates the photos in it, and does not recurse.
     private List<PhotoItem> SelectedPhotos() =>
         ThumbGrid.SelectedItems.OfType<PhotoItem>().Where(i => !i.IsFolder && !i.IsShell).ToList();
+
+    /// Everything selected that exists on disk, folders included — for delete, move and drag.
+    private List<PhotoItem> SelectedOnDisk() =>
+        ThumbGrid.SelectedItems.OfType<PhotoItem>().Where(i => !i.IsShell).ToList();
 
     /// Write a rating to the sidecar(s) and reflect it in the UI. Applies to the whole selection.
     private void SetRating(int rating)

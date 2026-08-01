@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window
         if (Content is FrameworkElement root)
             root.ActualThemeChanged += (_, _) => StyleTitleBar();
 
+        HookMarquee();
         BuildToolMenu();
         if (_settings.TreeWidth is { } saved)
             Root.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(saved, TreeMinWidth, TreeMaxWidth));

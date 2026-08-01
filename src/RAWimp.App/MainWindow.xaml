@@ -136,6 +136,12 @@
                     </GridView.ItemTemplate>
                 </GridView>
 
+                <!-- rubber-band selection box; drawn over the grid, never hit-testable -->
+                <Rectangle x:Name="Marquee" Visibility="Collapsed" IsHitTestVisible="False"
+                           HorizontalAlignment="Left" VerticalAlignment="Top"
+                           Fill="{ThemeResource AccentFillColorDefaultBrush}" Opacity="0.25"
+                           Stroke="{ThemeResource AccentFillColorDefaultBrush}" StrokeThickness="1" />
+
                 <!-- preview mode overlay (Enter / double-click); Esc or ← → to navigate -->
                 <Grid x:Name="PreviewPanel" Visibility="Collapsed" IsTabStop="True"
                       Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
