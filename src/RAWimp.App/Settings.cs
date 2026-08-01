@@ -22,6 +22,10 @@ sealed class Settings
     /// Width of the folder pane, so a resize survives a restart.
     public double? TreeWidth { get; set; }
 
+    /// Largest the thumbnail cache may grow, in MB. 0 means no limit.
+    /// Default keeps a big library cached without quietly eating the disk.
+    public int ThumbCacheLimitMb { get; set; } = 1024;
+
     private static string Dir => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RAWimp");
     private static string File_ => System.IO.Path.Combine(Dir, "settings.json");

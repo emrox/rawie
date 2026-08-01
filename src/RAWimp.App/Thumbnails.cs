@@ -34,9 +34,28 @@ static class ThumbCache
         try
         {
             var f = FileFor(key);
-            return File.Exists(f) ? await File.ReadAllBytesAsync(f) : null;
+            if (!File.Exists(f)) return null;
+            var bytes = await File.ReadAllBytesAsync(f);
+            KeepAlive(f);
+            return bytes;
         }
         catch { return null; }
+    }
+
+    /// Mark a cache entry as recently used, so eviction drops genuinely cold thumbnails rather than
+    /// the folder you browse every day.
+    ///
+    /// Windows disables last-access-time tracking by default, so the write time is what we have to
+    /// work with. Touching it on every hit would mean a metadata write per thumbnail; once a day is
+    /// enough to keep hot entries at the young end of the queue.
+    private static void KeepAlive(string file)
+    {
+        try
+        {
+            if (File.GetLastWriteTimeUtc(file) > DateTime.UtcNow.AddDays(-1)) return;
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow);
+        }
+        catch { /* a cache entry we can't touch is not worth failing a thumbnail over */ }
     }
 
     /// Total bytes on disk (for the settings dialog). Cheap enough for a few thousand small files.
@@ -66,8 +85,64 @@ static class ThumbCache
             var tmp = f + ".tmp";                       // write-then-rename: no torn files on crash
             await File.WriteAllBytesAsync(tmp, bytes);
             File.Move(tmp, f, overwrite: true);
+            CountWrite();
         }
         catch (Exception e) { Diag.Log("thumb cache write: " + e.Message); }
+    }
+
+    // --- size cap ---
+
+    /// Cache limit in bytes; 0 means no limit. Set from settings at startup.
+    public static long LimitBytes;
+
+    private static int _writesSinceCheck;
+    private static int _trimming;
+
+    /// Measuring the whole cache means walking it, so don't do that per write — a browse session
+    /// adds thumbnails steadily, and checking every few hundred is soon enough to hold the ceiling.
+    private static void CountWrite()
+    {
+        if (LimitBytes <= 0) return;
+        if (Interlocked.Increment(ref _writesSinceCheck) < 300) return;
+        Interlocked.Exchange(ref _writesSinceCheck, 0);
+        TrimInBackground();
+    }
+
+    /// Bring the cache under its limit, oldest entries first. Safe to call at any time; overlapping
+    /// calls collapse into one.
+    public static void TrimInBackground()
+    {
+        if (LimitBytes <= 0) return;
+        if (Interlocked.Exchange(ref _trimming, 1) == 1) return;   // one trim at a time
+
+        _ = Task.Run(() =>
+        {
+            try { Trim(LimitBytes); }
+            catch (Exception e) { Diag.Log("thumb cache trim: " + e.Message); }
+            finally { Interlocked.Exchange(ref _trimming, 0); }
+        });
+    }
+
+    private static void Trim(long limitBytes)
+    {
+        if (!Directory.Exists(Dir)) return;
+
+        var files = new DirectoryInfo(Dir).EnumerateFiles("*", SearchOption.AllDirectories).ToList();
+        var total = files.Sum(f => f.Length);
+        if (total <= limitBytes) return;
+
+        // Clear down to 90% so a trim isn't triggered again on the very next write.
+        var target = (long)(limitBytes * 0.9);
+        var removed = 0;
+
+        foreach (var file in files.OrderBy(f => f.LastWriteTimeUtc))
+        {
+            if (total <= target) break;
+            try { total -= file.Length; file.Delete(); removed++; }
+            catch { /* in use or already gone — skip it */ }
+        }
+
+        Diag.Log($"thumb cache trimmed: removed {removed} files, now {total / 1048576.0:F0} MB");
     }
 }
 

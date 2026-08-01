@@ -54,6 +54,8 @@ public sealed partial class MainWindow : Window
             root.ActualThemeChanged += (_, _) => StyleTitleBar();
 
         HookMarquee();
+        ApplyCacheLimit();
+        ThumbCache.TrimInBackground();   // catch a cache that grew past the limit in a previous run
         BuildToolMenu();
         if (_settings.TreeWidth is { } saved)
             Root.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(saved, TreeMinWidth, TreeMaxWidth));
@@ -690,6 +692,16 @@ public sealed partial class MainWindow : Window
         clearStart.Click += (_, _) => startBox.Text = "";
 
         var cacheText = new TextBlock { Text = CacheSizeText(), Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] };
+
+        var limits = new (string Label, int Mb)[]
+        {
+            ("250 MB", 250), ("500 MB", 500), ("1 GB", 1024), ("2 GB", 2048), ("5 GB", 5120), ("No limit", 0),
+        };
+        var limitBox = new ComboBox { MinWidth = 160 };
+        foreach (var (label, _) in limits) limitBox.Items.Add(label);
+        var currentLimit = Array.FindIndex(limits, l => l.Mb == _settings.ThumbCacheLimitMb);
+        limitBox.SelectedIndex = currentLimit >= 0 ? currentLimit : 2;   // fall back to 1 GB
+
         var clearCache = new Button { Content = "Clear thumbnail cache" };
         clearCache.Click += (_, _) =>
         {
@@ -714,6 +726,16 @@ public sealed partial class MainWindow : Window
 
         panel.Children.Add(new TextBlock { Text = "Thumbnail cache", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         panel.Children.Add(cacheText);
+        panel.Children.Add(Row(new TextBlock { Text = "Keep at most", VerticalAlignment = VerticalAlignment.Center }, limitBox));
+        panel.Children.Add(new TextBlock
+        {
+            Text = "When the cache passes this size, the thumbnails you haven't looked at for longest "
+                 + "are removed. They are rebuilt automatically if you visit those folders again.",
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 420,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        });
         panel.Children.Add(clearCache);
 
         var dlg = new ContentDialog
@@ -730,9 +752,17 @@ public sealed partial class MainWindow : Window
         {
             var v = startBox.Text.Trim();
             _settings.StartFolder = string.IsNullOrWhiteSpace(v) ? null : v;
+            _settings.ThumbCacheLimitMb = limits[Math.Max(0, limitBox.SelectedIndex)].Mb;
             _settings.Save();
+
+            // Apply straight away: lowering the limit should shrink the cache now, not eventually.
+            ApplyCacheLimit();
+            ThumbCache.TrimInBackground();
         }
     }
+
+    private void ApplyCacheLimit() =>
+        ThumbCache.LimitBytes = (long)_settings.ThumbCacheLimitMb * 1024 * 1024;
 
     private static string CacheSizeText()
     {
