@@ -56,9 +56,9 @@
                     <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE700;" FontSize="14" />
                     <Button.Flyout>
                         <MenuFlyout>
-                            <MenuFlyoutItem Text="Open folder…" Click="OnPickFolder" />
-                            <MenuFlyoutItem Text="Import…" Click="OnOpenImport" />
-                            <MenuFlyoutItem Text="Settings…" Click="OnOpenSettings" />
+                            <MenuFlyoutItem Text="Open folder" Click="OnPickFolder" />
+                            <MenuFlyoutItem Text="Import" Click="OnOpenImport" />
+                            <MenuFlyoutItem Text="Settings" Click="OnOpenSettings" />
                             <MenuFlyoutItem Text="About" Click="OnOpenAbout" />
                             <MenuFlyoutSeparator />
                             <MenuFlyoutSubItem x:Name="FilterMenu" Text="Filter" />
@@ -68,9 +68,9 @@
                 </Button>
 
                 <StackPanel x:Name="WideTools" Grid.Column="1" Orientation="Horizontal" Spacing="12">
-                <Button Content="Open folder…" Click="OnPickFolder" />
-                <Button Content="Import…" Click="OnOpenImport" />
-                <Button Content="Settings…" Click="OnOpenSettings" />
+                <Button Content="Open folder" Click="OnPickFolder" />
+                <Button Content="Import" Click="OnOpenImport" />
+                <Button Content="Settings" Click="OnOpenSettings" />
 
                 <ComboBox x:Name="FilterBox" MinWidth="130" SelectionChanged="OnViewOptionChanged"
                           ToolTipService.ToolTip="Show only photos with this rating">
