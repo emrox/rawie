@@ -146,9 +146,16 @@
                 <Grid x:Name="PreviewPanel" Visibility="Collapsed" IsTabStop="True"
                       Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
                     <Image x:Name="PreviewImage" Stretch="Uniform" Margin="8" />
-                    <TextBlock x:Name="PreviewHint" Text="Esc: back    ← →: navigate    1-5: rate    X: reject"
-                               VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16"
-                               Opacity="0.6" FontSize="12" />
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Top"
+                                HorizontalAlignment="Right" Margin="16">
+                        <TextBlock x:Name="PreviewHint" Text="Esc: back    ← →: navigate    1-5: rate    X: reject"
+                                   VerticalAlignment="Center" Opacity="0.6" FontSize="12" />
+                        <!-- Esc already closes; this is the same exit for anyone reaching for the mouse. -->
+                        <Button Click="OnClosePreview" ToolTipService.ToolTip="Close preview (Esc)"
+                                Background="Transparent" BorderThickness="0" Padding="7,3" FontSize="14">
+                            <FontIcon Glyph="&#xE711;" FontSize="13" />
+                        </Button>
+                    </StackPanel>
                     <Border x:Name="PreviewRatingBox" VerticalAlignment="Bottom" HorizontalAlignment="Center"
                             Margin="0,0,0,18" Visibility="Collapsed"
                             Background="#A0000000" CornerRadius="4" Padding="10,3">

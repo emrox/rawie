@@ -655,6 +655,8 @@ public sealed partial class MainWindow : Window
         if (ThumbGrid.SelectedItem is PhotoItem p) _ = ShowPreview(p, _exifToken);
     }
 
+    private void OnClosePreview(object sender, RoutedEventArgs e) => ExitPreview();
+
     private void ExitPreview()
     {
         _preview = false;
