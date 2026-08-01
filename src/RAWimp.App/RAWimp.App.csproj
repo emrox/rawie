@@ -12,6 +12,10 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
+    <!-- Required even though the app is unpackaged: this switches on the tooling that compiles XAML
+         into .xbf and builds the resources.pri index. Without it a *published* build silently ships
+         no XAML at all and dies with "Cannot locate resource from 'ms-appx:///MainWindow.xaml'". -->
+    <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Ship one language rather than ~40 sets of satellite resources. -->
