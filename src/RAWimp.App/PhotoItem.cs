@@ -62,15 +62,24 @@ public sealed class PhotoItem : INotifyPropertyChanged
         {
             if (_rating == value) return;
             _rating = value;
-            Raise(); Raise(nameof(RatingText)); Raise(nameof(RatingBrush)); Raise(nameof(RatingVisibility));
+            Raise(); Raise(nameof(RatingBrush)); Raise(nameof(RatingVisibility)); Raise(nameof(RatingPips));
         }
     }
 
-    public string RatingText => Rating switch
+    /// The badge as icons: one star per point, or a single ban when rejected.
+    ///
+    /// The rows are built once and shared by every photo with the same rating — a badge appears on
+    /// each rated cell of a virtualised grid, so allocating a fresh list per item per scroll is
+    /// exactly the kind of churn worth avoiding here.
+    private static readonly RatingPip[][] StarRows =
+        [.. Enumerable.Range(0, 6).Select(n => Enumerable.Range(0, n).Select(_ => new RatingPip("star", true, Gold)).ToArray())];
+    private static readonly RatingPip[] RejectedRow = [new("ban", false, Red)];
+
+    public IReadOnlyList<RatingPip> RatingPips => Rating switch
     {
-        Xmp.Rejected => "✕",
-        > 0 => new string('★', Rating),
-        _ => ""
+        Xmp.Rejected => RejectedRow,
+        > 0 and <= 5 => StarRows[Rating],
+        _ => StarRows[0],
     };
 
     public Brush RatingBrush => Rating == Xmp.Rejected ? Red : Gold;

@@ -26,15 +26,16 @@ public sealed partial class MainWindow
 
         var rating = p!.Rating;
         var n = 1;
-        foreach (var star in RatingStars.Children.OfType<TextBlock>())
+        foreach (var cell in RatingStars.Children.OfType<Border>())
         {
-            if (ReferenceEquals(star, RejectMark)) continue;
+            if (ReferenceEquals(cell, RejectMark)) continue;
+            if (cell.Child is not LucideIcon star) continue;
             var filled = rating >= n;
-            star.Text = filled ? "★" : "☆";
-            star.Foreground = filled ? StarGold : StarDim;
+            star.Tint = filled ? StarGold : StarDim;   // outline until earned, then solid gold
+            star.Filled = filled;
             n++;
         }
-        RejectMark.Foreground = rating == Xmp.Rejected ? StarRed : StarDim;
+        RejectIcon.Tint = rating == Xmp.Rejected ? StarRed : StarDim;
     }
 
     private void OnStarTapped(object sender, TappedRoutedEventArgs e)
@@ -54,8 +55,7 @@ public sealed partial class MainWindow
 
     private void ShowPreviewRating(PhotoItem p)
     {
-        PreviewRating.Text = p.RatingText;
-        PreviewRating.Foreground = p.RatingBrush;
+        PreviewRating.ItemsSource = p.RatingPips;
         PreviewRatingBox.Visibility = p.RatingVisibility;
     }
 

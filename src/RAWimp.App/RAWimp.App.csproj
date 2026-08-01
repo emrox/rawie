@@ -51,6 +51,9 @@
     <Content Include="..\..\assets\logo.ico" Link="logo.ico" CopyToOutputDirectory="PreserveNewest" />
     <!-- Shown in the About dialog, so it has to ship rather than only being the exe's icon. -->
     <Content Include="..\..\assets\logo.png" Link="logo.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Lucide as a font, used only where WinUI demands an IconElement (MenuFlyoutItem.Icon) —
+         IconElement can't be subclassed, so the path-drawn LucideIcon can't go there. -->
+    <Content Include="..\..\assets\fonts\lucide.ttf" Link="lucide.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

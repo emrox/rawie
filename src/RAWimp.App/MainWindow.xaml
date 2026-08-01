@@ -53,41 +53,98 @@
                 <!-- Shown only when the toolbar no longer fits; holds the same commands. -->
                 <Button x:Name="MenuButton" Grid.Column="0" Visibility="Collapsed" Padding="10,5"
                         AutomationProperties.Name="Menu" ToolTipService.ToolTip="Menu">
-                    <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE700;" FontSize="14" />
+                    <local:LucideIcon Glyph="menu" Size="16" />
                     <Button.Flyout>
                         <MenuFlyout>
-                            <MenuFlyoutItem Text="Open folder" Click="OnPickFolder" />
-                            <MenuFlyoutItem Text="Import" Click="OnOpenImport" />
-                            <MenuFlyoutItem Text="Settings" Click="OnOpenSettings" />
-                            <MenuFlyoutItem Text="About" Click="OnOpenAbout" />
+                            <!-- FontIcon, not the path-drawn LucideIcon: MenuFlyoutItem.Icon accepts
+                                 only an IconElement, which has no public constructor and so cannot be
+                                 subclassed. Same artwork, taken from Lucide's own icon font; the
+                                 glyph codes come from its info.json. -->
+                            <MenuFlyoutItem Text="Open folder" Click="OnPickFolder">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource LucideFont}" Glyph="&#xE247;" FontSize="16" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Import" Click="OnOpenImport">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource LucideFont}" Glyph="&#xE22F;" FontSize="16" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem Text="Settings" Click="OnOpenSettings">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource LucideFont}" Glyph="&#xE154;" FontSize="16" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem Text="About" Click="OnOpenAbout">
+                                <MenuFlyoutItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource LucideFont}" Glyph="&#xE0F9;" FontSize="16" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
                             <MenuFlyoutSeparator />
-                            <MenuFlyoutSubItem x:Name="FilterMenu" Text="Filter" />
-                            <MenuFlyoutSubItem x:Name="SortMenu" Text="Sort" />
+                            <MenuFlyoutSubItem x:Name="FilterMenu" Text="Filter">
+                                <MenuFlyoutSubItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource LucideFont}" Glyph="&#xE0DC;" FontSize="16" />
+                                </MenuFlyoutSubItem.Icon>
+                            </MenuFlyoutSubItem>
+                            <MenuFlyoutSubItem x:Name="SortMenu" Text="Sort">
+                                <MenuFlyoutSubItem.Icon>
+                                    <FontIcon FontFamily="{StaticResource LucideFont}" Glyph="&#xE37D;" FontSize="16" />
+                                </MenuFlyoutSubItem.Icon>
+                            </MenuFlyoutSubItem>
                         </MenuFlyout>
                     </Button.Flyout>
                 </Button>
 
                 <StackPanel x:Name="WideTools" Grid.Column="1" Orientation="Horizontal" Spacing="12">
-                <Button Content="Open folder" Click="OnPickFolder" />
-                <Button Content="Import" Click="OnOpenImport" />
-                <Button Content="Settings" Click="OnOpenSettings" />
+                <Button Click="OnPickFolder">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <local:LucideIcon Glyph="folder-open" Size="16" />
+                        <TextBlock Text="Open folder" />
+                    </StackPanel>
+                </Button>
+                <Button Click="OnOpenImport">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <local:LucideIcon Glyph="import" Size="16" />
+                        <TextBlock Text="Import" />
+                    </StackPanel>
+                </Button>
+                <Button Click="OnOpenSettings">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <local:LucideIcon Glyph="settings" Size="16" />
+                        <TextBlock Text="Settings" />
+                    </StackPanel>
+                </Button>
 
-                <ComboBox x:Name="FilterBox" MinWidth="130" SelectionChanged="OnViewOptionChanged"
+                <!-- ItemsSource + DataTemplate rather than inline ComboBoxItems holding panels: a
+                     UIElement can have only one parent, so the collapsed box would steal the visual
+                     from the drop-down row and the selected entry would render blank. A template is
+                     realised separately for each. -->
+                <ComboBox x:Name="FilterBox" MinWidth="150" SelectionChanged="OnViewOptionChanged"
+                          ItemsSource="{x:Bind FilterOptions}" SelectedIndex="0"
                           ToolTipService.ToolTip="Show only photos with this rating">
-                    <ComboBoxItem Content="All ratings" Tag="all" IsSelected="True" />
-                    <ComboBoxItem Content="★ and up" Tag="1" />
-                    <ComboBoxItem Content="★★ and up" Tag="2" />
-                    <ComboBoxItem Content="★★★ and up" Tag="3" />
-                    <ComboBoxItem Content="★★★★ and up" Tag="4" />
-                    <ComboBoxItem Content="★★★★★" Tag="5" />
-                    <ComboBoxItem Content="Rejected" Tag="rej" />
-                    <ComboBoxItem Content="Unrated" Tag="none" />
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:ViewOption">
+                            <StackPanel Orientation="Horizontal" Spacing="7"
+                                        AutomationProperties.Name="{x:Bind Label}">
+                                <local:LucideIcon Glyph="{x:Bind Glyph}" Size="13" Filled="{x:Bind Filled}" />
+                                <TextBlock Text="{x:Bind Label}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
                 </ComboBox>
 
-                <ComboBox x:Name="SortBox" MinWidth="120" SelectionChanged="OnViewOptionChanged"
+                <ComboBox x:Name="SortBox" MinWidth="130" SelectionChanged="OnViewOptionChanged"
+                          ItemsSource="{x:Bind SortOptions}" SelectedIndex="0"
                           ToolTipService.ToolTip="Sort order">
-                    <ComboBoxItem Content="Sort: name" Tag="name" IsSelected="True" />
-                    <ComboBoxItem Content="Sort: rating" Tag="rating" />
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:ViewOption">
+                            <StackPanel Orientation="Horizontal" Spacing="7"
+                                        AutomationProperties.Name="{x:Bind Label}">
+                                <local:LucideIcon Glyph="{x:Bind Glyph}" Size="13" Filled="{x:Bind Filled}" />
+                                <TextBlock Text="{x:Bind Label}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
                 </ComboBox>
                 </StackPanel>
 
@@ -98,7 +155,7 @@
                      the commands. Hidden when the burger takes over, which carries it as an item. -->
                 <Button x:Name="AboutButton" Grid.Column="3" Click="OnOpenAbout" Padding="10,5"
                         AutomationProperties.Name="About" ToolTipService.ToolTip="About RAWimp">
-                    <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE946;" FontSize="14" />
+                    <local:LucideIcon Glyph="info" Size="16" />
                 </Button>
             </Grid>
 
@@ -136,8 +193,19 @@
                                 <Border Grid.Row="0" VerticalAlignment="Bottom" HorizontalAlignment="Center"
                                         Visibility="{x:Bind RatingVisibility, Mode=OneWay}"
                                         Background="#A0000000" CornerRadius="3" Padding="5,1" Margin="0,0,0,3">
-                                    <TextBlock Text="{x:Bind RatingText, Mode=OneWay}"
-                                               Foreground="{x:Bind RatingBrush, Mode=OneWay}" FontSize="12" />
+                                    <ItemsControl ItemsSource="{x:Bind RatingPips, Mode=OneWay}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" Spacing="1" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="local:RatingPip">
+                                                <local:LucideIcon Glyph="{x:Bind Glyph}" Size="13"
+                                                                  Filled="{x:Bind Filled}" Tint="{x:Bind Brush}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </Border>
                                 <TextBlock Grid.Row="1" Text="{x:Bind Name}" FontSize="11"
                                            TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" Padding="4,2" />
@@ -163,13 +231,25 @@
                         <!-- Esc already closes; this is the same exit for anyone reaching for the mouse. -->
                         <Button Click="OnClosePreview" ToolTipService.ToolTip="Close preview (Esc)"
                                 Background="Transparent" BorderThickness="0" Padding="7,3" FontSize="14">
-                            <FontIcon Glyph="&#xE711;" FontSize="13" />
+                            <local:LucideIcon Glyph="x" Size="15" />
                         </Button>
                     </StackPanel>
                     <Border x:Name="PreviewRatingBox" VerticalAlignment="Bottom" HorizontalAlignment="Center"
                             Margin="0,0,0,18" Visibility="Collapsed"
                             Background="#A0000000" CornerRadius="4" Padding="10,3">
-                        <TextBlock x:Name="PreviewRating" FontSize="18" /></Border>
+                        <ItemsControl x:Name="PreviewRating">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="3" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="local:RatingPip">
+                                    <local:LucideIcon Glyph="{x:Bind Glyph}" Size="19"
+                                                      Filled="{x:Bind Filled}" Tint="{x:Bind Brush}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl></Border>
                 </Grid>
             </Grid>
 
@@ -183,14 +263,35 @@
             <ScrollViewer>
                 <StackPanel Padding="14" Spacing="6">
                     <TextBlock Text="Rating" FontWeight="SemiBold" />
+                    <!-- Each star sits in a Border so the whole cell is tappable, not just the glyph
+                         (LucideIcon is hit-test invisible so it can't swallow the click). The
+                         Transparent background is load-bearing: with no brush at all a Border is not
+                         hit-testable, and the taps went nowhere. -->
                     <StackPanel x:Name="RatingStars" Orientation="Horizontal" Spacing="2" Margin="0,0,0,10">
-                        <TextBlock Tag="1" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="1 star" />
-                        <TextBlock Tag="2" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="2 stars" />
-                        <TextBlock Tag="3" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="3 stars" />
-                        <TextBlock Tag="4" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="4 stars" />
-                        <TextBlock Tag="5" Text="☆" FontSize="22" Tapped="OnStarTapped" ToolTipService.ToolTip="5 stars" />
-                        <TextBlock x:Name="RejectMark" Text="✕" FontSize="18" Margin="12,2,0,0"
-                                   Tapped="OnRejectTapped" ToolTipService.ToolTip="Reject (X)" />
+                        <Border Tag="1" Padding="2" Background="Transparent"
+                                Tapped="OnStarTapped" ToolTipService.ToolTip="1 star">
+                            <local:LucideIcon Glyph="star" Size="22" />
+                        </Border>
+                        <Border Tag="2" Padding="2" Background="Transparent"
+                                Tapped="OnStarTapped" ToolTipService.ToolTip="2 stars">
+                            <local:LucideIcon Glyph="star" Size="22" />
+                        </Border>
+                        <Border Tag="3" Padding="2" Background="Transparent"
+                                Tapped="OnStarTapped" ToolTipService.ToolTip="3 stars">
+                            <local:LucideIcon Glyph="star" Size="22" />
+                        </Border>
+                        <Border Tag="4" Padding="2" Background="Transparent"
+                                Tapped="OnStarTapped" ToolTipService.ToolTip="4 stars">
+                            <local:LucideIcon Glyph="star" Size="22" />
+                        </Border>
+                        <Border Tag="5" Padding="2" Background="Transparent"
+                                Tapped="OnStarTapped" ToolTipService.ToolTip="5 stars">
+                            <local:LucideIcon Glyph="star" Size="22" />
+                        </Border>
+                        <Border x:Name="RejectMark" Padding="2" Margin="12,0,0,0" Background="Transparent"
+                                Tapped="OnRejectTapped" ToolTipService.ToolTip="Reject (X)">
+                            <local:LucideIcon x:Name="RejectIcon" Glyph="ban" Size="20" />
+                        </Border>
                     </StackPanel>
 
                     <TextBlock Text="Info" FontWeight="SemiBold" Margin="0,0,0,4" />

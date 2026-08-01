@@ -32,6 +32,26 @@ public sealed partial class MainWindow : Window
     private IReadOnlyList<PhotoItem> _current = Array.Empty<PhotoItem>();
     public ObservableCollection<ExifRow> Exif { get; } = new();
 
+    /// Entries of the filter and sort dropdowns. Tag is what the view logic switches on; Label is
+    /// also what the burger's Filter/Sort submenus show, so the two stay in step by construction.
+    public List<ViewOption> FilterOptions { get; } =
+    [
+        new("all",  "All ratings", "funnel", false),
+        new("1",    "1 and up",    "star",   true),
+        new("2",    "2 and up",    "star",   true),
+        new("3",    "3 and up",    "star",   true),
+        new("4",    "4 and up",    "star",   true),
+        new("5",    "5 stars",     "star",   true),
+        new("rej",  "Rejected",    "ban",    false),
+        new("none", "Unrated",     "star",   false),
+    ];
+
+    public List<ViewOption> SortOptions { get; } =
+    [
+        new("name",   "Sort: name",   "arrow-up-down", false),
+        new("rating", "Sort: rating", "star",          true),
+    ];
+
     /// The filesystem folder currently shown, or null when browsing a camera.
     private string? _currentFolder;
 
@@ -152,8 +172,8 @@ public sealed partial class MainWindow : Window
     /// Folders always show — they have no rating, and hiding them would break navigation.
     private void ApplyView(bool selectFirst)
     {
-        var minStars = (FilterBox?.SelectedItem as FrameworkElement)?.Tag as string ?? "all";
-        var sortBy = (SortBox?.SelectedItem as FrameworkElement)?.Tag as string ?? "name";
+        var minStars = (FilterBox?.SelectedItem as ViewOption)?.Tag ?? "all";
+        var sortBy = (SortBox?.SelectedItem as ViewOption)?.Tag ?? "name";
 
         IEnumerable<PhotoItem> view = _all.Where(i => i.IsFolder || Passes(i, minStars));
 
@@ -337,18 +357,22 @@ public sealed partial class MainWindow : Window
 
     // --- narrow-window toolbar: collapse into a hamburger menu ---
 
-    /// Mirror the filter/sort combos into the overflow menu. The combos stay the source of truth —
-    /// the menu items just move their selection, so there is only one list to maintain.
+    /// Mirror the filter/sort options into the overflow menu. The menu items just move the combo's
+    /// selection, so there is only one list to maintain.
+    ///
+    /// Built from the option lists, not from combo.Items: this runs in the constructor, and the
+    /// combos get their items from an x:Bind ItemsSource that WinUI does not apply until the Loading
+    /// pass — so reading combo.Items here found nothing and both submenus came up empty.
     private void BuildToolMenu()
     {
-        void Fill(MenuFlyoutSubItem menu, ComboBox combo, string group)
+        void Fill(MenuFlyoutSubItem menu, ComboBox combo, List<ViewOption> options, string group)
         {
-            for (var i = 0; i < combo.Items.Count; i++)
+            for (var i = 0; i < options.Count; i++)
             {
                 var index = i;
                 var entry = new RadioMenuFlyoutItem
                 {
-                    Text = (combo.Items[i] as ComboBoxItem)?.Content?.ToString() ?? $"{i}",
+                    Text = options[i].Label,
                     GroupName = group,
                     IsChecked = combo.SelectedIndex == i,
                 };
@@ -357,8 +381,8 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        Fill(FilterMenu, FilterBox, "filter");
-        Fill(SortMenu, SortBox, "sort");
+        Fill(FilterMenu, FilterBox, FilterOptions, "filter");
+        Fill(SortMenu, SortBox, SortOptions, "sort");
     }
 
     private void SyncToolMenuChecks()
@@ -732,8 +756,8 @@ public sealed partial class MainWindow : Window
             PlaceholderText = "(blank — reopen the last folder)",
             Width = 320,
         };
-        var browse = new Button { Content = "Browse…" };
-        var clearStart = new Button { Content = "Use last folder" };
+        var browse = new Button { Content = LucideIcon.Label("folder", "Browse…") };
+        var clearStart = new Button { Content = LucideIcon.Label("rotate-ccw", "Use last folder") };
         browse.Click += async (_, _) =>
         {
             var picked = await PickFolderAsync();
@@ -752,7 +776,7 @@ public sealed partial class MainWindow : Window
         var currentLimit = Array.FindIndex(limits, l => l.Mb == _settings.ThumbCacheLimitMb);
         limitBox.SelectedIndex = currentLimit >= 0 ? currentLimit : 2;   // fall back to 1 GB
 
-        var clearCache = new Button { Content = "Clear thumbnail cache" };
+        var clearCache = new Button { Content = LucideIcon.Label("trash-2", "Clear thumbnail cache") };
         clearCache.Click += (_, _) =>
         {
             ThumbCache.Clear();

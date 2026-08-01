@@ -9,6 +9,10 @@
                 <controls:XamlControlsResources />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- Lucide's icon font, shipped beside the exe. Only needed where WinUI insists on an
+                 IconElement; everywhere else the path-drawn local:LucideIcon is used. -->
+            <FontFamily x:Key="LucideFont">ms-appx:///lucide.ttf#lucide</FontFamily>
+
             <!-- Button intent tokens. WinUI already provides the "primary action" look as
                  AccentButtonStyle; these add the matching destructive variant, using the same reds
                  Windows uses for critical state. Apply them with Theme.AsPrimary()/AsDanger(). -->

@@ -36,7 +36,7 @@ public sealed partial class MainWindow
         RefreshSources();
 
         var destBox = new TextBox { MinWidth = 300, Text = _settings.ImportFolder ?? DefaultImportFolder(), IsReadOnly = true };
-        var browse = new Button { Content = "Browse…" };
+        var browse = new Button { Content = LucideIcon.Label("folder", "Browse…") };
 
         var patternBox = new TextBox { MinWidth = 380, Text = _settings.ImportPattern ?? ImportPattern.Default };
 
@@ -146,7 +146,7 @@ public sealed partial class MainWindow
         // "Really stop?" can't be a second ContentDialog — WinUI allows only one at a time. A Flyout
         // with Full placement gives the same effect: a popup centred over everything, so it can't end
         // up scrolled out of sight the way an inline panel did once this dialog grew.
-        var stopButton = new Button { Content = "Stop import" }.AsDanger();
+        var stopButton = new Button { Content = LucideIcon.Label("ban", "Stop import") }.AsDanger();
         var keepButton = new Button { Content = "Keep importing" }.AsPrimary();
         var confirmFlyout = new Flyout
         {
