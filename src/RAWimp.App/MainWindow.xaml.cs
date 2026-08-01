@@ -446,6 +446,10 @@ public sealed partial class MainWindow : Window
         ShowPreviewRating(p);
         UpdateRatingStars(p);
 
+        // Start the image before the EXIF read rather than after it: nothing here depends on EXIF,
+        // and awaiting it first left the previous photo on screen for the whole read.
+        if (_preview) _ = ShowPreview(p, token);
+
         if (p.IsFolder)
         {
             Exif.Clear();
@@ -467,17 +471,20 @@ public sealed partial class MainWindow : Window
             Exif.Clear();
             foreach (var r in rows) Exif.Add(r);
         }
-
-        if (_preview) await ShowPreview(p, token);
     }
 
     private async Task ShowPreview(PhotoItem p, int token)
     {
+        // Stand the grid thumbnail up first. Loading the full image takes long enough that the
+        // *previous* photo stayed on screen meanwhile, which read as the wrong image being shown.
+        // This one is already in memory, so it appears instantly: same photo, briefly softer.
+        PreviewImage.Source = p.Thumb;   // null when it hasn't loaded yet — blank still beats wrong
+
         try
         {
             var img = await p.LoadPreviewAsync(1600);   // cached, decoded off the XAML pipeline
             if (token != _exifToken) return;            // selection moved on -> drop stale image
-            PreviewImage.Source = img;
+            if (img is not null) PreviewImage.Source = img;   // on failure, keep the thumbnail up
         }
         catch (Exception e) { Diag.Log("preview fail: " + e.Message); }
     }
