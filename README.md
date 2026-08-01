@@ -135,3 +135,15 @@ look when something misbehaves in a GUI that can't tell you itself.
   through `IsExpanded`/`IsSelected` bindings on your own model.
 - **Never write into the user's originals.** Ratings go to sidecars; file operations go through the
   shell so they stay undoable.
+
+## Licence
+
+RAWimp is free software under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
+
+You may use, study, modify and share it. If you distribute RAWimp, modified or not, you must pass on
+the same freedoms and make the complete corresponding source available under the GPL.
+
+The name **RAWimp** and the imp artwork are not covered by that licence and remain the author's — a
+redistributed fork should carry its own name and artwork. See [assets/LICENSE.md](assets/LICENSE.md).
+
+Components RAWimp ships with are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

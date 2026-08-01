@@ -20,6 +20,10 @@
   <?define Version = "0.0.1"?>
   <?endif?>
 
+  <?ifndef LicenseRtf?>
+  <?define LicenseRtf = "gpl-3.0.rtf"?>
+  <?endif?>
+
   <Package Name="RAWimp"
            Manufacturer="RAWimp"
            Version="$(Version)"
@@ -67,6 +71,10 @@
       <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\RAWimp" Name="installed" Type="integer" Value="1" KeyPath="yes" />
     </Component>
+
+    <!-- The InstallDir flow shows a licence page; without this it displays WiX's placeholder text.
+         Generated from the verbatim LICENSE at the repo root. -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(LicenseRtf)" />
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
   </Package>

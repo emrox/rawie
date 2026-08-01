@@ -66,6 +66,7 @@ jobs:
           -d Version=${{ inputs.version || '0.0.1' }}
           -d PublishDir=${{ github.workspace }}\publish\portable
           -d AssetsDir=${{ github.workspace }}\assets
+          -d LicenseRtf=${{ github.workspace }}\installer\gpl-3.0.rtf
           -o RAWimp-setup-x64.msi
 
       - uses: actions/upload-artifact@v4

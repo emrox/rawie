@@ -6,6 +6,18 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>RAWimp.App</RootNamespace>
     <AssemblyName>RAWimp</AssemblyName>
+
+    <!-- Shown in the built exe's Properties → Details, and by the installer. -->
+    <Product>RAWimp</Product>
+    <Company>Stefan Bauckmeier</Company>
+    <Authors>Stefan Bauckmeier</Authors>
+    <!-- Plain ASCII: the version-resource encoding mangles (c) and dashes into mojibake. -->
+    <Copyright>Copyright (C) 2026 Stefan Bauckmeier. GNU GPL v3.0.</Copyright>
+    <Description>A fast photo browser, culler and image importer for Windows.</Description>
+    <!-- FileDescription (what Task Manager and the Properties dialog show) comes from AssemblyTitle,
+         not Description. -->
+    <AssemblyTitle>RAWimp — photo browser, culler and importer</AssemblyTitle>
+    <Version>0.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\assets\logo.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
