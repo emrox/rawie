@@ -82,10 +82,12 @@ public static class ImportEngine
         return sources;
     }
 
-    /// Find the media files a source is offering. Runs off the UI thread — it can walk a whole card.
-    public static List<ImportCandidate> Scan(ImportSource source, CancellationToken ct)
+    /// Find the media files a source is offering. Runs off the UI thread — it can walk a whole card,
+    /// and enumerating a camera over MTP is slow enough that `found` reports progress as it goes.
+    public static List<ImportCandidate> Scan(ImportSource source, CancellationToken ct,
+                                             IProgress<int>? found = null)
     {
-        var found = new List<ImportCandidate>();
+        var items = new List<ImportCandidate>();
         try
         {
             if (source.FolderPath is { } dir)
@@ -93,36 +95,50 @@ public static class ImportEngine
                 foreach (var f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (IsMedia(f)) found.Add(new ImportCandidate(Path.GetFileName(f), f, null));
+                    if (!IsMedia(f)) continue;
+                    items.Add(new ImportCandidate(Path.GetFileName(f), f, null));
+                    Tick(items.Count, found);
                 }
             }
             else if (source.Device is { } device)
             {
-                CollectFromDevice(device, found, 0, ct);
+                CollectFromDevice(device, items, 0, ct, found);
             }
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception e) { Diag.Log("import scan: " + e.Message); }
 
-        return found.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        found?.Report(items.Count);
+        return items.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    // Reporting every single file would flood the dispatcher on a big card.
+    private static void Tick(int count, IProgress<int>? found)
+    {
+        if (count % 25 == 0) found?.Report(count);
     }
 
     // MTP content is an object graph, not a filesystem — recurse it.
-    private static void CollectFromDevice(ShellItem item, List<ImportCandidate> into, int depth, CancellationToken ct)
+    private static void CollectFromDevice(ShellItem item, List<ImportCandidate> into, int depth,
+                                          CancellationToken ct, IProgress<int>? found)
     {
         ct.ThrowIfCancellationRequested();
         if (depth > 12) return;
 
         if (!item.IsFolder)
         {
-            if (IsMedia(item.Name ?? "")) into.Add(new ImportCandidate(item.Name ?? "?", null, item));
+            if (IsMedia(item.Name ?? ""))
+            {
+                into.Add(new ImportCandidate(item.Name ?? "?", null, item));
+                Tick(into.Count, found);
+            }
             return;
         }
 
         ShellFolder folder;
         try { folder = new ShellFolder(item); } catch { return; }
         foreach (var child in folder.EnumerateChildren(FolderItemFilter.Folders | FolderItemFilter.NonFolders, HWND.NULL))
-            CollectFromDevice(child, into, depth + 1, ct);
+            CollectFromDevice(child, into, depth + 1, ct, found);
     }
 
     /// What a candidate would be imported as, without copying anything (drives the live preview).

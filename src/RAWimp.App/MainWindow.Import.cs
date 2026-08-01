@@ -47,7 +47,12 @@ public sealed partial class MainWindow
         conflictBox.SelectedIndex = Enum.TryParse<ImportConflict>(_settings.ImportConflict, out var savedConflict)
             ? (int)savedConflict : (int)ImportConflict.KeepBoth;
 
-        var status = new TextBlock { Text = sourceBox.Items.Count == 0 ? "Attach a camera or insert a card." : "Scanning…" };
+        var status = new TextBlock
+        {
+            Text = sourceBox.Items.Count == 0 ? "Attach a camera or insert a card." : "Scanning…",
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var scanRing = new ProgressRing { Width = 16, Height = 16, IsActive = false, Visibility = Visibility.Collapsed };
         var previewList = new TextBlock
         {
             FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas"),
@@ -76,19 +81,58 @@ public sealed partial class MainWindow
                              + (candidates.Count > 8 ? $"\n… and {candidates.Count - 8} more" : "");
         }
 
+        // Scanning a camera over MTP takes a while. Import stays disabled until it finishes —
+        // pressing it early used to report "nothing to import", which looked like a failure.
+        //
+        // Deliberately *not* importing while the scan runs: an MTP device serves one operation at a
+        // time (see Mtp.Gate), so overlapping the two would contend for the device rather than
+        // overlap, and risks the ERROR_BUSY failures that cost us dearly. For a card the scan is a
+        // directory walk of milliseconds, so there is nothing to win there either.
+        CancellationTokenSource? scanCts = null;
+
+        // The dialog doesn't exist yet at this point; wired up once it does.
+        var setImportEnabled = (bool on) => { };
+
         async Task ScanSelectedAsync()
         {
             if (sourceBox.SelectedItem is not ImportSource src) return;
-            status.Text = "Scanning…";
+
+            scanCts?.Cancel();                       // a previous scan must not overwrite this one
+            var cts = new CancellationTokenSource();
+            scanCts = cts;
+
+            candidates = new();
             previewList.Text = "";
+            scanRing.IsActive = true;
+            scanRing.Visibility = Visibility.Visible;
+            setImportEnabled(false);
+            status.Text = "Scanning…";
+
+            var progress = new Progress<int>(n =>
+            {
+                if (!cts.IsCancellationRequested) status.Text = $"Scanning… {n} files so far";
+            });
+
             try
             {
-                var found = await Task.Run(() => ImportEngine.Scan(src, CancellationToken.None));
+                var found = await Task.Run(() => ImportEngine.Scan(src, cts.Token, progress), cts.Token);
+                if (cts.IsCancellationRequested) return;   // superseded by a newer scan
+
                 candidates = found;
                 status.Text = found.Count == 0 ? "No photos found on this source." : $"{found.Count} files found.";
                 RefreshPreview();
             }
+            catch (OperationCanceledException) { return; }
             catch (Exception ex) { status.Text = "Scan failed: " + ex.Message; Diag.Log("import scan: " + ex.Message); }
+            finally
+            {
+                if (!cts.IsCancellationRequested)
+                {
+                    scanRing.IsActive = false;
+                    scanRing.Visibility = Visibility.Collapsed;
+                    setImportEnabled(candidates.Count > 0);
+                }
+            }
         }
 
         sourceBox.SelectionChanged += async (_, _) => await ScanSelectedAsync();
@@ -167,7 +211,7 @@ public sealed partial class MainWindow
         panel.Children.Add(Label("Preview"));
         panel.Children.Add(previewScroll);
         panel.Children.Add(bar);
-        panel.Children.Add(status);
+        panel.Children.Add(Row(scanRing, status));
 
         var dlg = new ContentDialog
         {
@@ -181,6 +225,9 @@ public sealed partial class MainWindow
 
         // ContentDialog is capped near 548px by default, which clipped the wider content below.
         dlg.Resources["ContentDialogMaxWidth"] = 760.0;
+
+        setImportEnabled = on => dlg.IsPrimaryButtonEnabled = on;
+        dlg.IsPrimaryButtonEnabled = false;      // nothing to import until a scan has finished
 
         var importing = false;
 

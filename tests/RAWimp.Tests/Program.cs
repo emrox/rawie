@@ -143,6 +143,35 @@ var third = await ImportEngine.RunAsync(cardSource,
 Check(third.Copied == 1, "a different file with the same name is still imported");
 Check(File.Exists(Path.Combine(vault, "SHOT1_001.nef")), "collision gets a sequence suffix, nothing overwritten");
 
+// Scanning a camera is slow, so the dialog shows a running count. Verify the engine reports it.
+Console.WriteLine("scan progress:");
+var bigCard = Path.Combine(dir, "bigcard");
+Directory.CreateDirectory(bigCard);
+for (var i = 0; i < 60; i++) File.WriteAllText(Path.Combine(bigCard, $"IMG_{i:D3}.NEF"), $"x{i}");
+File.WriteAllText(Path.Combine(bigCard, "readme.txt"), "not media");
+
+var reports = new List<int>();
+var bigSource = new ImportSource("Big card", bigCard, null);
+var scanned = ImportEngine.Scan(bigSource, CancellationToken.None, new Progress<int>(n => { lock (reports) reports.Add(n); }));
+await Task.Delay(150);   // Progress<T> marshals asynchronously
+
+Check(scanned.Count == 60, $"scan finds every media file and ignores others (got {scanned.Count})");
+lock (reports)
+{
+    Check(reports.Count > 0, $"progress is reported during the scan ({reports.Count} updates)");
+    Check(reports.Count < scanned.Count, "progress is throttled, not one update per file");
+    Check(reports.Contains(60), "final count is reported");
+}
+
+var cancelledScan = new CancellationTokenSource();
+cancelledScan.Cancel();
+try
+{
+    ImportEngine.Scan(bigSource, cancelledScan.Token);
+    Check(false, "a cancelled scan throws");
+}
+catch (OperationCanceledException) { Check(true, "a cancelled scan throws"); }
+
 Console.WriteLine("conflict policy (same name, different content):");
 var conflictCard = Path.Combine(dir, "conflict");
 var conflictVault = Path.Combine(dir, "conflict_vault");
