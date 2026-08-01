@@ -47,9 +47,11 @@
 
         <!-- content: toolbar + (grid | preview) + status -->
         <Grid x:Name="CenterPane" Grid.Column="2" RowDefinitions="Auto,*,Auto" SizeChanged="OnCenterPaneSizeChanged">
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Padding="12">
+            <!-- A Grid rather than a StackPanel so the folder path takes the slack and About can sit
+                 hard right. It also gives PathText a bounded width, so its ellipsis actually works. -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12" Padding="12">
                 <!-- Shown only when the toolbar no longer fits; holds the same commands. -->
-                <Button x:Name="MenuButton" Visibility="Collapsed" Padding="10,5"
+                <Button x:Name="MenuButton" Grid.Column="0" Visibility="Collapsed" Padding="10,5"
                         AutomationProperties.Name="Menu" ToolTipService.ToolTip="Menu">
                     <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE700;" FontSize="14" />
                     <Button.Flyout>
@@ -57,6 +59,7 @@
                             <MenuFlyoutItem Text="Open folder…" Click="OnPickFolder" />
                             <MenuFlyoutItem Text="Import…" Click="OnOpenImport" />
                             <MenuFlyoutItem Text="Settings…" Click="OnOpenSettings" />
+                            <MenuFlyoutItem Text="About" Click="OnOpenAbout" />
                             <MenuFlyoutSeparator />
                             <MenuFlyoutSubItem x:Name="FilterMenu" Text="Filter" />
                             <MenuFlyoutSubItem x:Name="SortMenu" Text="Sort" />
@@ -64,7 +67,7 @@
                     </Button.Flyout>
                 </Button>
 
-                <StackPanel x:Name="WideTools" Orientation="Horizontal" Spacing="12">
+                <StackPanel x:Name="WideTools" Grid.Column="1" Orientation="Horizontal" Spacing="12">
                 <Button Content="Open folder…" Click="OnPickFolder" />
                 <Button Content="Import…" Click="OnOpenImport" />
                 <Button Content="Settings…" Click="OnOpenSettings" />
@@ -88,9 +91,16 @@
                 </ComboBox>
                 </StackPanel>
 
-                <TextBlock x:Name="PathText" Text="(no folder)" VerticalAlignment="Center"
+                <TextBlock x:Name="PathText" Grid.Column="2" Text="(no folder)" VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis" />
-            </StackPanel>
+
+                <!-- Icon-only and out on its own: About is rarely reached for, so it stays clear of
+                     the commands. Hidden when the burger takes over, which carries it as an item. -->
+                <Button x:Name="AboutButton" Grid.Column="3" Click="OnOpenAbout" Padding="10,5"
+                        AutomationProperties.Name="About" ToolTipService.ToolTip="About RAWimp">
+                    <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE946;" FontSize="14" />
+                </Button>
+            </Grid>
 
             <Grid Grid.Row="1">
                 <GridView x:Name="ThumbGrid" Padding="8"

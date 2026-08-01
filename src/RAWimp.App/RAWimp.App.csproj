@@ -49,6 +49,8 @@
   <ItemGroup>
     <!-- Also needed at runtime: the window icon is set from this file (see MainWindow.StyleTitleBar). -->
     <Content Include="..\..\assets\logo.ico" Link="logo.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Shown in the About dialog, so it has to ship rather than only being the exe's icon. -->
+    <Content Include="..\..\assets\logo.png" Link="logo.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

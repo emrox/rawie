@@ -381,6 +381,7 @@ public sealed partial class MainWindow : Window
         var narrow = e.NewSize.Width < needed;
         WideTools.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
         MenuButton.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
+        AboutButton.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;   // the burger carries it
     }
 
     // --- shared window helpers (focus, modal dialogs, HWND) ---
