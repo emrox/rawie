@@ -40,6 +40,9 @@ public sealed partial class MainWindow : Window
     private PhotoItem? _selectedPhoto;   // so the previous item's selection border can be cleared
     private readonly Settings _settings = Settings.Load();
 
+    /// Folders visited, most recent first — what the mouse's back button walks out through.
+    private readonly Stack<string> _back = new();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -47,6 +50,11 @@ public sealed partial class MainWindow : Window
 
         // handledEventsToo: the GridView swallows Enter in grid mode, so a normal KeyDown never sees it.
         Root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
+
+        // Same reason: the GridView and the tree both handle PointerPressed for selection, so the
+        // mouse's back button would never reach an ordinary handler.
+        Root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPointerPressed),
+                        handledEventsToo: true);
 
         StyleTitleBar();
         // Follow the user switching Windows between light and dark while the app is open.
@@ -82,10 +90,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void LoadFolder(string path)
+    /// record: false when the navigation *is* a back-jump or a refresh of the same folder — otherwise
+    /// going back would immediately push the folder being left and the button would just ping-pong.
+    private void LoadFolder(string path, bool record = true)
     {
         if (_preview) ExitPreview();   // a new folder always lands in the grid
         ThumbLoader.Reset();           // abandon thumbnail work queued for the previous folder
+
+        if (record && _currentFolder is { } leaving && !PathEquals(leaving, path)) _back.Push(leaving);
         _currentFolder = path;
         PathText.Text = path;
 
@@ -656,6 +668,34 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnClosePreview(object sender, RoutedEventArgs e) => ExitPreview();
+
+    // The mouse's back button, as in Explorer and browsers: leaves the big view first, then walks
+    // back out through the folders visited.
+    private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_modalDepth > 0) return;
+        if (!e.GetCurrentPoint(Root).Properties.IsXButton1Pressed) return;
+
+        e.Handled = true;
+        if (_preview) ExitPreview();
+        else GoBack();
+    }
+
+    private void GoBack()
+    {
+        // Folders can be deleted or moved while the app is open, so skip past any that have gone
+        // rather than letting one stale entry swallow the click.
+        while (_back.TryPop(out var previous))
+        {
+            if (!Directory.Exists(previous)) continue;
+            LoadFolder(previous, record: false);
+            RevealInTree(previous);
+            return;
+        }
+    }
+
+    private static bool PathEquals(string a, string b) =>
+        string.Equals(a.TrimEnd('\\'), b.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
 
     private void ExitPreview()
     {
