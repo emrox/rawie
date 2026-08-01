@@ -369,6 +369,15 @@ public static class ImportEngine
                     using (var dst = File.Create(temp))
                         src.CopyTo(dst, 1 << 20);
 
+                    // A fresh temp file is stamped "now", and everything downstream reads the staged
+                    // copy as if it were the original: tokens fall back to its write time when the
+                    // file carries no EXIF date, so photos synced onto a phone — which have none —
+                    // all landed under the *import* date instead of when they were taken. Restore the
+                    // device's own date so the staged copy is a faithful stand-in, which also gives
+                    // the imported file the right timestamp.
+                    if (TokensFromDevice(item.Item!) is { } fromDevice)
+                        try { File.SetLastWriteTime(temp, fromDevice.When); } catch { }
+
                     ReleaseDevice();
                     return temp;
                 }

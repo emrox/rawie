@@ -61,6 +61,14 @@ Check(read.Ext == "NEF", "extension read with the file's own casing, not lowerca
 Check(read.OriginalName == "NOEXIF", "original name read");
 Check(read.When.Year > 2000, "falls back to file time when there is no capture date");
 
+// Camera files are staged to a temp copy before their tokens are read, so that copy must carry the
+// device's date — otherwise every EXIF-less photo files itself under the import date. This pins the
+// fallback the staging relies on: the file's own write time decides, never "now".
+var oldFile = NewFile("SYNCED.JPG");
+File.SetLastWriteTime(oldFile, new DateTime(2012, 12, 23, 1, 59, 5));
+Check(ImportPattern.Resolve(@"{yyyy}\{MM}\{name}.{ext}", ImportPattern.ReadTokens(oldFile))
+      == @"2012\12\SYNCED.JPG", "an EXIF-less file sorts by its own write time, not today's date");
+
 // ---------------------------------------------------------------- xmp sidecars
 Console.WriteLine("xmp round-trip:");
 var photo = NewFile("IMG_0001.NEF");
