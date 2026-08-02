@@ -81,6 +81,16 @@ public sealed partial class MainWindow : Window
         if (Content is FrameworkElement root)
             root.ActualThemeChanged += (_, _) => StyleTitleBar();
 
+        // Folders created, renamed or deleted elsewhere — in Explorer, or by any other app — leave
+        // the tree stale. Only the folder currently on screen is watched, so reconcile the rest when
+        // the window comes forward: that is exactly when someone returns from doing it.
+        Activated += (_, e) =>
+        {
+            // _modalDepth: a dialog is up, so don't reshuffle the tree underneath it.
+            if (e.WindowActivationState != WindowActivationState.Deactivated && _modalDepth == 0)
+                RefreshLoadedTree();
+        };
+
         HookMarquee();
         ApplyCacheLimit();
         ThumbCache.TrimInBackground();   // catch a cache that grew past the limit in a previous run
@@ -116,6 +126,10 @@ public sealed partial class MainWindow : Window
     {
         if (_preview) ExitPreview();   // a new folder always lands in the grid
         ThumbLoader.Reset();           // abandon thumbnail work queued for the previous folder
+
+        // Canonicalise first: the tree matches paths as strings, so a forward-slash or trailing-slash
+        // path (from --folder, or one persisted into settings) would silently fail to reveal.
+        try { path = Path.GetFullPath(path); } catch (Exception e) { Diag.Log("bad path: " + e.Message); }
 
         if (record && _currentFolder is { } leaving && !PathEquals(leaving, path)) _back.Push(leaving);
         _currentFolder = path;

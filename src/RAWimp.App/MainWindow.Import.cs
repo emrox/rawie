@@ -309,6 +309,10 @@ public sealed partial class MainWindow
 
                 if (outcome.Copied > 0 && Directory.Exists(destination))
                 {
+                    // The pattern creates folders ({yyyy}\{MM}\…), and RevealInTree won't find them:
+                    // it expands via EnsureChildren, which does nothing once a node is loaded. So
+                    // reconcile the tree with disk first, then reveal.
+                    RefreshLoadedTree();
                     LoadFolder(destination);       // show what just landed
                     RevealInTree(destination);
                 }

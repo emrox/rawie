@@ -202,24 +202,56 @@ public sealed partial class MainWindow
     {
         if (folderPath is null) return;
         var node = FindLoadedNode(folderPath);
-        if (node is null || !node.Loaded) return;
+        if (node is not null && node.Loaded) RefreshChildrenOf(node);
+    }
 
+    private void RefreshChildrenOf(FolderNode node)
+    {
         try
         {
-            var onDisk = Directory.EnumerateDirectories(folderPath)
+            var onDisk = Directory.EnumerateDirectories(node.Path)
                 .Where(d => !IsHiddenDir(d))
                 .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            var gone = 0;
             for (var i = node.Children.Count - 1; i >= 0; i--)
                 if (!onDisk.Any(d => SamePath(d, node.Children[i].Path)))
-                    node.Children.RemoveAt(i);
+                    { node.Children.RemoveAt(i); gone++; }
 
+            var added = 0;
             for (var i = 0; i < onDisk.Count; i++)
                 if (!node.Children.Any(c => SamePath(c.Path, onDisk[i])))
-                    node.Children.Insert(Math.Min(i, node.Children.Count), NewFolder(onDisk[i]));
+                    { node.Children.Insert(Math.Min(i, node.Children.Count), NewFolder(onDisk[i])); added++; }
+
+            // Only when it actually changed — this runs on every activation, and a "nothing to do"
+            // line per open node would drown the log.
+            if (added + gone > 0) Diag.Log($"tree: {node.Path} +{added} -{gone}");
         }
         catch (Exception e) { Diag.Log("tree refresh: " + e.Message); }
+    }
+
+    /// Reconcile the whole visible tree with disk. Only nodes the user has actually expanded are
+    /// walked — everything else loads fresh when opened — so the cost is one directory listing per
+    /// open node, not per folder on the drive.
+    ///
+    /// Deliberately not SHChangeNotifyRegister: catching changes live needs a recursive
+    /// interrupt-level registration, whose event volume is the usual reason that approach turns into
+    /// a performance problem. Nobody can see the tree while the app is in the background, so
+    /// reconciling when it comes forward is indistinguishable and far cheaper.
+    private void RefreshLoadedTree()
+    {
+        foreach (var root in Roots) RefreshSubtree(root);
+    }
+
+    private void RefreshSubtree(FolderNode node)
+    {
+        // Camera/shell nodes are skipped: their listings go over MTP, which is slow and serialised,
+        // and they already refresh on device-change messages.
+        if (node.Item is not null || !node.Loaded || string.IsNullOrEmpty(node.Path)) return;
+
+        RefreshChildrenOf(node);
+        foreach (var child in node.Children.ToList()) RefreshSubtree(child);
     }
 
     /// Walk to an existing node for `path`, without expanding or loading anything on the way.
