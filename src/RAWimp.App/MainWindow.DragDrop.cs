@@ -16,21 +16,81 @@ namespace RAWimp.App;
 // stack and show its progress UI.
 public sealed partial class MainWindow
 {
+    /// Gap in pixels between the cursor and the dragged photo.
+    private const int DragGap = 5;
+
     // --- dragging out of the grid ---
-    private void OnGridDragItemsStarting(object sender, DragItemsStartingEventArgs e)
+    //
+    // Per-tile CanDrag rather than the GridView's own CanDragItems: DragItemsStarting carries no
+    // DragUI, and ListViewBase does not raise DragStarting on the item container either, so with the
+    // built-in route there is no way to replace the drag image — it stays the whole 184px tile.
+    // Owning the drag here means owning the selection rule too (see below).
+    private async void OnGridItemDragStarting(UIElement sender, DragStartingEventArgs e)
     {
+        if ((sender as FrameworkElement)?.DataContext is not PhotoItem grabbed) { e.Cancel = true; return; }
+
+        // Explorer's rule: dragging one of the selected items takes the whole selection with it,
+        // while dragging an unselected item takes only that one.
+        var selection = ThumbGrid.SelectedItems.OfType<PhotoItem>().ToList();
+        List<PhotoItem> dragged = selection.Contains(grabbed) ? selection : [grabbed];
+
         // Camera items have no filesystem path, so there is nothing another app could open.
-        var dragged = e.Items.OfType<PhotoItem>().Where(i => !i.IsShell).ToList();
+        dragged = dragged.Where(i => !i.IsShell).ToList();
         if (dragged.Count == 0) { e.Cancel = true; return; }
 
-        e.Data.RequestedOperation = DataPackageOperation.Copy | DataPackageOperation.Move;
+        Offer(e.Data, dragged);
 
-        // Resolving StorageFiles is async but DragItemsStarting can't await; a data provider lets the
-        // work happen when the drop target actually asks for it.
-        e.Data.SetDataProvider(StandardDataFormats.StorageItems, async request =>
+        if (grabbed.IsFolder || grabbed.IsShell) return;   // no photo to show; keep the default
+
+        var deferral = e.GetDeferral();
+        try
+        {
+            if (await grabbed.DragBitmapAsync(gap: DragGap) is { } small)
+                e.DragUI.SetContentFromSoftwareBitmap(small, new Windows.Foundation.Point(0, 0));
+        }
+        catch (Exception ex) { Diag.Log("grid drag visual: " + ex.Message); }
+        finally { deferral.Complete(); }
+    }
+
+    // --- dragging the photo out of the big preview ---
+    private async void OnPreviewDragStarting(object sender, DragStartingEventArgs e)
+    {
+        // Only what's on screen, not the whole selection: the user grabbed one visible image, and
+        // handing the drop target four more files would be a surprise.
+        if (ThumbGrid.SelectedItem is not PhotoItem { IsShell: false, IsFolder: false } shown)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        Offer(e.Data, [shown]);
+
+        // Replace the drag visual, which would otherwise be the full-size image and hide whatever
+        // you are dragging onto. The deferral holds the drag open while the small copy is decoded;
+        // if that fails we simply leave WinUI's default in place rather than block the drag.
+        var deferral = e.GetDeferral();
+        try
+        {
+            if (await shown.DragBitmapAsync(gap: DragGap) is { } small)
+                // Anchor at the bitmap's top-left, which is now transparent padding — so the photo
+                // itself hangs down and to the right of the cursor, DragGap pixels clear of it.
+                e.DragUI.SetContentFromSoftwareBitmap(small, new Windows.Foundation.Point(0, 0));
+        }
+        catch (Exception ex) { Diag.Log("drag visual: " + ex.Message); }
+        finally { deferral.Complete(); }
+    }
+
+    /// Advertise photos to a drop target.
+    ///
+    /// Resolving StorageFiles is async, but neither DragItemsStarting nor DragStarting can await —
+    /// a data provider defers the work until the target actually asks for the files.
+    private static void Offer(DataPackage data, List<PhotoItem> items)
+    {
+        data.RequestedOperation = DataPackageOperation.Copy | DataPackageOperation.Move;
+        data.SetDataProvider(StandardDataFormats.StorageItems, async request =>
         {
             var deferral = request.GetDeferral();
-            try { request.SetData(await ToStorageItems(dragged)); }
+            try { request.SetData(await ToStorageItems(items)); }
             catch (Exception ex) { Diag.Log("drag out: " + ex.Message); }
             finally { deferral.Complete(); }
         });

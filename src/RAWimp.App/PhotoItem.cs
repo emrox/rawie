@@ -197,6 +197,69 @@ public sealed class PhotoItem : INotifyPropertyChanged
         catch (Exception e) { Diag.Log($"preview fail: {Name}: {e.Message}"); return null; }
     }
 
+    /// A small bitmap to drag under the cursor.
+    ///
+    /// WinUI otherwise builds the drag visual from the element being dragged, which in the big view
+    /// is the full-size image — so the thing being dragged covers the target you are aiming at.
+    ///
+    /// SoftwareBitmap rather than BitmapImage: the thumbnails here are WriteableBitmaps, which
+    /// DragUI accepts in neither overload, and decoding stays out of the XAML image pipeline like
+    /// everywhere else in this file.
+    public async Task<SoftwareBitmap?> DragBitmapAsync(uint edge = 96, int gap = 0)
+    {
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(Path);
+            using var t = await file.GetThumbnailAsync(ThumbnailMode.SingleItem, edge, ThumbnailOptions.ResizeThumbnail);
+            if (t is null || t.Size == 0) return null;
+
+            var decoder = await BitmapDecoder.CreateAsync(t);
+
+            // The shell caches thumbnails at fixed sizes and can hand back a larger one than asked
+            // for, so clamp rather than trusting the request.
+            var longest = Math.Max(decoder.PixelWidth, decoder.PixelHeight);
+            var scale = longest > edge ? edge / (double)longest : 1.0;
+            var transform = new BitmapTransform
+            {
+                ScaledWidth = (uint)Math.Max(1, Math.Round(decoder.PixelWidth * scale)),
+                ScaledHeight = (uint)Math.Max(1, Math.Round(decoder.PixelHeight * scale)),
+            };
+
+            var bitmap = await decoder.GetSoftwareBitmapAsync(
+                BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, transform,
+                ExifOrientationMode.RespectExifOrientation, ColorManagementMode.DoNotColorManage);
+
+            return gap > 0 ? PadTopLeft(bitmap, gap) : bitmap;
+        }
+        catch (Exception e) { Diag.Log($"drag bitmap {Name}: {e.Message}"); return null; }
+    }
+
+    /// Grow the bitmap by `gap` transparent pixels on its top and left edges.
+    ///
+    /// This is how the drag image gets a gap from the cursor: DragUI clamps its anchor point to the
+    /// bitmap's bounds, so an anchor outside the image is silently ignored and no offset appears.
+    /// Transparent padding moves the visible pixels instead, which it cannot clamp away.
+    private static SoftwareBitmap PadTopLeft(SoftwareBitmap src, int gap)
+    {
+        try
+        {
+            int w = src.PixelWidth, h = src.PixelHeight, stride = w * 4;
+            var pixels = new byte[stride * h];
+            src.CopyToBuffer(pixels.AsBuffer());
+
+            int pw = w + gap, ph = h + gap;
+            var padded = new byte[pw * 4 * ph];   // zeroed = fully transparent, premultiplied
+            for (var y = 0; y < h; y++)
+                System.Buffer.BlockCopy(pixels, y * stride, padded, ((y + gap) * pw + gap) * 4, stride);
+
+            var result = new SoftwareBitmap(BitmapPixelFormat.Bgra8, pw, ph, BitmapAlphaMode.Premultiplied);
+            result.CopyFromBuffer(padded.AsBuffer());
+            src.Dispose();
+            return result;
+        }
+        catch (Exception e) { Diag.Log("drag pad: " + e.Message); return src; }   // gap is cosmetic
+    }
+
     // Large preview for a camera item (same extraction at a bigger size).
     public async Task<ImageSource?> LoadShellPreviewAsync(uint size = 1600)
     {
